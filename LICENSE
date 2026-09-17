@@ -1,0 +1,93 @@
+Web API Extractor Project License
+
+Version: 1.0
+Effective Date: 2026-09-17
+
+This repository is provided for personal learning, evaluation, testing, and non-commercial research use.
+
+1. Allowed use
+
+You may:
+- Use this project for personal learning and study.
+- Use this project for internal testing and verification.
+- Modify this project for personal or non-commercial research purposes.
+- Run this project locally for evaluation and experimentation.
+
+2. Source attribution and redistribution
+
+If you modify, package, merge, fork, or redistribute this project, you must retain the original copyright and attribution notices, including the project name and the original source reference.
+
+Any modified distribution must clearly state that it is based on Web API Extractor and must preserve the original attribution information.
+
+3. Derived products and open-source requirement
+
+If you create a derivative product, tool, component, service, script set, platform integration, or other work based on this project and make it available to others for use, deployment, or delivery, that derivative work must be released in open-source form and must retain this attribution requirement.
+
+The source code of such derivative work must remain open and must include clear attribution to the original project.
+
+4. Commercial restriction
+
+This project may not be used directly for commercial sale, commercial SaaS delivery, paid closed-source product integration, or other direct commercial use without prior written authorization.
+
+Direct commercial exploitation is not permitted unless a separate written license is obtained from the rights holder.
+
+5. No warranty
+
+This project is provided "AS IS", without any express or implied warranties, including merchantability, fitness for a particular purpose, non-infringement, availability, stability, or suitability for a specific task.
+
+The project is provided without guarantee of correctness, completeness, or safety.
+
+6. Responsibility
+
+Users are solely responsible for compliance with all applicable laws, third-party terms, website terms of service, privacy requirements, and security obligations when using this project.
+
+7. Reference statement
+
+This license is a practical user-facing usage boundary statement for this project. It is intended to clarify allowed use, attribution requirements, and commercial restrictions. If a formal legal document is required for a particular deployment, legal review should be obtained before relying on this statement as the sole legal basis.
+
+中文说明
+
+本项目仅适用于个人学习、评估、测试和非商业研究用途。
+
+1. 允许的使用
+
+您可以：
+- 用于个人学习和研究。
+- 用于内部测试和验证。
+- 在非商业目的下修改本项目。
+- 在本地运行本项目进行评估和实验。
+
+2. 来源声明和再分发
+
+如果您修改、打包、合并、分叉或重新分发本项目，必须保留原始版权说明和项目来源声明。
+
+任何修改后的分发版本都必须明确说明其基于 Web API Extractor，并保留原始署名信息。
+
+3. 衍生作品和开源要求
+
+如果您基于本项目开发衍生产品、工具、组件、服务、脚本集合、平台集成或其他工作，并向他人提供使用、部署或交付，则该衍生作品必须以开源形式发布，并保留本项目的来源声明和归属要求。
+
+该衍生作品的源代码必须保持开放，并明确注明其来源。
+
+4. 商业限制
+
+本项目不得直接用于商业销售、商业 SaaS 交付、付费闭源产品集成或其他直接商业用途，除非事先获得书面授权。
+
+未获书面授权时，不得直接商业化使用本项目。
+
+5. 无担保
+
+本项目按“现状”提供，不提供任何明示或暗示的保证，包括但不限于适销性、适用性、非侵权性、可用性、稳定性或特定场景适配性。
+
+项目不保证其完整性、正确性或安全性。
+
+6. 使用者责任
+
+使用者应自行负责遵守适用法律、第三方服务条款、网站使用条款、隐私要求及安全规定。
+
+7. 说明
+
+本声明用于明确本项目的使用边界、来源要求和商业限制。若某一具体场景需要正式法律约束，建议在依赖本声明作为唯一法律依据前进行法律审核。
+
+Copyright (c) 2026
+All rights reserved.

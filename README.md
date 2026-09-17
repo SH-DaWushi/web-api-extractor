@@ -1,224 +1,301 @@
-# 项目概述
+# Web API Extractor
 
-## 目录
-1. [简介](#简介)
-2. [项目结构](#项目结构)
-3. [核心组件](#核心组件)
-4. [架构总览](#架构总览)
-5. [详细组件分析](#详细组件分析)
-6. [依赖关系分析](#依赖关系分析)
-7. [性能考量](#性能考量)
-8. [故障排查指南](#故障排查指南)
-9. [结论](#结论)
-10. [附录：快速开始与使用要点](#附录快速开始与使用要点)
+这是一个“浏览器抓取 + 登录识别 + 接口分析 + 代码生成”的工具项目。
 
 ## 简介
-WebAPIExtractor 是一个基于 FastMCP 协议的自动化 Web API 发现与提取工具。它通过 Playwright 驱动浏览器、利用 CDP（Chrome DevTools Protocol）捕获网络流量，结合智能分析引擎对请求/响应进行归一化与模式识别，最终生成可运行的 Python/FastMCP 客户端代码，实现“从真实浏览器行为到可用接口”的端到端自动化。使用方法见<a href=https://github.com/shdawushi-dotcom/WebAPIExtractor/blob/main/Docs/content/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B.md>快速开始</a>
+WebAPIExtractor 是一个基于 FastMCP 协议的自动化 Web API 发现与提取工具。它通过 Playwright 驱动浏览器、利用 CDP（Chrome DevTools Protocol）捕获网络流量，结合智能分析引擎对请求/响应进行归一化与模式识别，最终生成可运行的 Python/FastMCP 客户端代码，实现“从真实浏览器行为到可用接口”的端到端自动化。使用方法见[快速开始](https://github.com/shdawushi-dotcom/WebAPIExtractor/blob/main/Docs/content/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B.md)。
 
-核心价值与目标
-- 自动化发现：无需人工梳理，自动捕获并归纳站点 API 路径与参数。
-- 安全脱敏：在写入共享日志前对敏感字段进行脱敏，降低泄露风险。
-- 认证管理：支持 HTTP 登录与交互式登录两种模式，持久化会话状态。
-- 流量分析：过滤静态资源与 OPTIONS，推断 JSON Schema，识别跨域与鉴权需求。
-- 代码生成：一键生成 FastMCP 服务与调用客户端，便于文档与测试复用。
+它不是单纯的一个 MCP 服务，而是一个可被 Agent / Skill 调用的能力包：
+- 下面有一个 FastMCP 的 MCP Server
+- 上层也可以被当作 Skill 使用
+- 真正的能力来自浏览器自动化、CDP 抓包、登录检测和接口分析
 
-适用场景
-- API 文档自动生成：将捕获到的接口与示例数据转化为可读文档。
-- 接口测试数据准备：基于真实流量构造用例，提升回归测试覆盖率。
-- 逆向与集成：为第三方系统对接提供快速可用的 MCP 工具集。
+如果你只是想快速知道它是干什么的，可以记住一句话：
 
-技术栈关键词
-- Playwright 浏览器自动化
-- CDP 网络捕获
-- 智能分析引擎（路径归一化、Schema 推断、鉴权候选识别）
-- FastMCP 服务器与工具生成
+“它会在真实网站里登录并操作，然后自动抓取网络请求，识别 API，最后生成一个可运行的 Python + FastMCP 服务。”
 
+---
 
-## 项目结构
-项目采用按功能划分的模块组织方式，入口由 FastMCP 暴露工具方法，内部职责清晰：
-- server.py：FastMCP 工具注册与会话生命周期管理
-- capture.py：Playwright + CDP 网络捕获与事件写入
-- analyzer.py：捕获数据分析、路径归一化、Schema 推断
-- generator.py：根据分析结果生成 Python/FastMCP 服务端与客户端
-- auth.py：HTTP 登录与交互式登录流程
-- config.py：运行时配置与环境变量
-- storage.py：会话元数据持久化与孤儿会话恢复
-- redaction.py：敏感信息脱敏
-- crypto_analyzer.py：加密载荷与脚本指纹检测
-- probe.py：登录页面探测与策略建议
+## 这个项目能做什么
 
-```mermaid
-graph TB
-A["FastMCP 入口<br/>server.py"] --> B["浏览器捕获<br/>capture.py"]
-A --> C["认证管理<br/>auth.py"]
-A --> D["分析引擎<br/>analyzer.py"]
-A --> E["代码生成器<br/>generator.py"]
-B --> F["存储层<br/>storage.py"]
-B --> G["脱敏<br/>redaction.py"]
-D --> H["加密检测<br/>crypto_analyzer.py"]
-A --> I["探针<br/>probe.py"]
-A --> J["配置<br/>config.py"]
+- 自动打开浏览器并访问目标网站
+- 检测是否需要登录
+- 支持普通表单登录、HTTP 登录和交互式浏览器登录
+- 监听页面请求和响应，抓取真实 API 流量
+- 过滤静态资源、跟踪脚本和无用请求
+- 归一化接口路径，比如 `/orders/123` 和 `/orders/456` 合并成 `/orders/{id}`
+- 识别鉴权字段、Cookie、token、认证头
+- 生成 Python + FastMCP 的接口封装代码
+
+---
+
+## 适合谁
+
+- 需要从真实网站中抽取 API 的开发者
+- 需要快速生成 MCP 工具的 Agent/Skill 使用者
+- 想做浏览器行为到接口调用的自动化链路的人
+
+不适合把它当做一个单独的“纯 API 接口库”；它更像是一个真实浏览器行为采集器 + 分析器 + 代码生成器。
+
+---
+
+## 使用前须知
+
+### 许可说明
+
+本项目的使用边界与授权约束已单独写入 [LICENSE](LICENSE)。
+
+- 允许个人学习、测试和非商业自用
+- 修改后再分发须保留原始来源说明
+- 基于本项目开发的衍生工作应当开源
+- 不允许直接商用
+
+如需正式法律依据，请以 [LICENSE](LICENSE) 为准。
+
+### 免责声明（适用范围）
+
+本项目仅用于合法合规的开发、测试、接口分析、文档生成、集成验证与合规评估场景，目的在于帮助用户研究、理解和管理自己拥有授权的系统接口行为。
+
+使用者必须遵守中华人民共和国法律法规以及使用者当地适用法律，并自行确认其使用行为的合法性。
+
+下列用途均不被视为本项目的合法用途：
+
+- 用于未经授权的系统探测、攻击、绕过认证、破坏服务可用性或违反网站/平台使用条款的行为
+- 用于窃取、泄露、篡改、篡用他人数据或敏感信息
+- 用于非法访问、非法抓取、非法分析或非法加工受保护的接口与数据
+- 用于造成目标系统宕机、服务中断、拒绝服务或其他对他人合法权益造成损害的行为
+- 用于任何违反适用法律、合同、行业规范和安全要求的目的
+
+本项目不提供、也不应被用于任何违法、违规或有潜在损害性的场景。
+
+本项目仅对“合法、授权、审慎、可控”的使用方式提供技术支持；对使用者基于本项目进行的任何行为，开发者均不承担责任。若使用者将本项目用于外部系统接口分析、调试、演示、测试或生产环境，必须事先确认其具备相应授权、合法依据和安全责任。
+
+在任何情况下，使用者都应自行负责遵守当地法律、行业规范、目标系统许可协议、隐私保护要求和网络安全要求。
+
+---
+
+## 目录结构
+
+```text
+WebAPIExtractor/
+├─ README.md                 # 项目说明
+├─ SKILL.md                  # Skill 使用说明
+├─ pyproject.toml            # Python 包配置
+├─ requirements.txt          # 依赖
+├─ webapi_extractor/          # 主代码目录
+│  ├─ __init__.py
+│  ├─ __main__.py
+│  ├─ analyzer.py             # 请求分析、路径归一化、Schema 识别
+│  ├─ audit.py               # 审计日志
+│  ├─ auth.py                # 登录流程
+│  ├─ capture.py             # 浏览器/CDP 抓包
+│  ├─ config.py              # 配置和环境变量
+│  ├─ control_bar.py         # 页面控制条
+│  ├─ crypto_analyzer.py     # 加密/密文检测
+│  ├─ generator.py           # 生成 FastMCP 服务
+│  ├─ login_detector.py      # 登录成功检测
+│  ├─ probe.py               # 登录探测
+│  ├─ redaction.py           # 脱敏
+│  ├─ server.py              # MCP Server 与工具注册
+│  └─ storage.py             # 会话存储与恢复
+└─ .vscode/                  # 通用 Agent 配置
 ```
 
-## 核心组件
-- 会话与生命周期管理：server.py 暴露 start_capture/get_capture_status/stop_capture/resume_capture/list_sessions 等工具，维护 CaptureSession 实例与持久化元数据。
-- 浏览器与 CDP 捕获：capture.py 启动 Chromium，注入控制条脚本，订阅 Network.* 事件，实时脱敏并批量写入 capture.jsonl。
-- 分析与推断：analyzer.py 加载事件流，过滤静态与 OPTIONS，归一化路径，推断 JSON Schema，标记鉴权需求与跨域。
-- 代码生成：generator.py 读取 analysis.json，生成 FastMCP 工具函数、requirements、.env.example、README 与冒烟测试脚本。
-- 认证管理：auth.py 提供 http_login 与 open_browser_login，保存 cookies/storage_state 到安全目录。
-- 配置与存储：config.py 从环境变量加载限制；storage.py 原子写入 session.json，支持孤儿会话恢复。
-- 安全与加密：redaction.py 对 Authorization/Cookie/JSON 敏感字段脱敏；crypto_analyzer.py 检测疑似密文与加密库线索。
-- 登录探测：probe.py 无头浏览页面，识别表单、验证码、MFA、OAuth/SSO 等指标，给出认证模式建议。
+---
 
-## 架构总览
-整体流程：用户通过 FastMCP 工具发起捕获 → 浏览器打开目标站点 → CDP 监听网络事件 → 脱敏后落盘 → 分析引擎聚合事件生成 endpoints → 可选加密检测 → 生成 FastMCP 客户端代码。
+## 快速开始
 
-```mermaid
-sequenceDiagram
-participant U as "用户"
-participant S as "FastMCP 服务<br/>server.py"
-participant C as "捕获会话<br/>capture.py"
-participant P as "Playwright/CDP"
-participant A as "分析引擎<br/>analyzer.py"
-participant G as "代码生成器<br/>generator.py"
-U->>S : 调用 start_capture(url, auth_state_path?)
-S->>C : 创建 CaptureSession 并后台启动
-C->>P : 启动 Chromium、注入控制脚本、启用 Network
-P-->>C : request/response/body 事件(已脱敏)
-C-->>S : 写入 capture.jsonl 与元数据
-U->>S : 调用 analyze_traffic(session_id)
-S->>A : 分析 capture.jsonl
-A-->>S : 返回 endpoints、schema、鉴权提示
-U->>S : 调用 generate_mcp_server(session_id, output_dir)
-S->>G : 生成 FastMCP 客户端与服务端
-G-->>U : 输出目录与说明文件
+### 1）安装依赖
+
+```powershell
+cd D:\MCP\WebAPIExtractor
+python -m pip install -r requirements.txt
 ```
 
-## 详细组件分析
+### 2）安装浏览器依赖
 
-### 浏览器捕获与 CDP 事件处理
-- 启动流程：创建上下文、注入控制条脚本、绑定 __mcp_control、启用 CDP Network/Runtime、自动附加子目标。
-- 事件处理：requestWillBeSent 记录请求与脱敏后的头部/负载；responseReceived 记录响应头与类型；loadingFinished 获取响应体并按限制截断，同时保存脚本片段。
-- 写入策略：事件入队，批量化写入 capture.jsonl，空闲监控在超时后暂停捕获。
-- 控制能力：通过控制条执行 pause/resume/stop，状态广播至页面。
-
-```mermaid
-flowchart TD
-Start(["开始捕获"]) --> Launch["启动浏览器与上下文"]
-Launch --> Attach["附加页面与CDP监听"]
-Attach --> OnReq{"收到请求?"}
-OnReq --> |是| Redact["脱敏头部与负载"]
-Redact --> Emit["入队事件"]
-OnReq --> |否| Wait["等待事件"]
-Emit --> Batch{"批次满或空闲?"}
-Batch --> |是| Flush["写入 capture.jsonl"]
-Batch --> |否| Wait
-Flush --> Wait
-Wait --> Idle{"空闲超时?"}
-Idle --> |是| Pause["暂停捕获"]
-Idle --> |否| Wait
-Pause --> Resume{"恢复?"}
-Resume --> |是| Wait
-Resume --> |否| Stop["停止并关闭浏览器"]
+```powershell
+python -m playwright install chromium
 ```
 
-### 分析引擎与路径归一化
-- 事件聚合：按 requestId 关联 request/response/response_body。
-- 过滤规则：忽略 OPTIONS、静态资源与跟踪域名。
-- 路径归一化：保守分组，保留字面量如 latest，将高区分度且形似参数的段替换为 {id}。
-- Schema 推断：递归构建 JSON Schema，标注必填字段。
-- 输出：endpoints、auth_metadata、stats、base_url 并写入 analysis.json。
+### 3）运行项目
 
-```mermaid
-flowchart TD
-Load["加载 capture.jsonl"] --> Group["按 method+host 分组"]
-Group --> Filter{"是否静态/OPTIONS/跟踪?"}
-Filter --> |是| Skip["跳过"]
-Filter --> |否| Normalize["路径归一化"]
-Normalize --> Schema["推断请求/响应 Schema"]
-Schema --> Mark["标记鉴权需求与跨域"]
-Mark --> Save["写入 analysis.json"]
+```powershell
+python -m webapi_extractor
 ```
 
-### 代码生成器
-- 输入：analysis.json 中的 endpoints。
-- 命名策略：基于路径片段与方法映射生成函数名，冲突时追加序号。
-- 输出：
-  - server.py：FastMCP 工具集合，封装 httpx 请求与鉴权头。
-  - requirements.txt：运行依赖。
-  - .env.example：API_BASE_URL、API_TOKEN 模板。
-  - README.md：使用说明与变更警告。
-  - smoke_test.py：冒烟测试脚本。
+或者安装为命令行工具：
 
-```mermaid
-flowchart TD
-Read["读取 analysis.json"] --> Select["选择端点(可选)"]
-Select --> GenCode["生成函数与客户端代码"]
-GenCode --> WriteFiles["写入 server.py/requirements/.env/README/smoke_test"]
-WriteFiles --> Done["返回输出目录与文件列表"]
+```powershell
+python -m pip install -e .
+web-api-extractor
 ```
 
-### 认证管理
-- HTTP 登录：优先尝试 JSON 登录或解析 HTML 表单，成功后保存 cookies/token 到安全目录。
-- 交互式登录：打开浏览器并注入控制条，用户完成登录后导出 storage_state。
-- 安全：权限位设置、独立目录隔离、禁止提交敏感文件。
+---
 
-```mermaid
-sequenceDiagram
-participant U as "用户"
-participant S as "FastMCP 服务"
-participant A as "认证模块"
-U->>S : http_login(url, user, pass, endpoint?)
-S->>A : 执行登录流程
-A-->>S : 返回成功/失败与状态路径
-U->>S : open_browser_login(url, timeout)
-S->>A : 启动浏览器并等待完成
-A-->>S : 返回 storage_state 路径
+## 典型使用流程
+
+### 方式 1：普通认证站点
+
+1. 调用 `probe_login(url)` 先看这个站点像不像需要登录
+2. 如果是简单表单，调用 `http_login(...)`
+3. 如果失败，调用 `open_browser_login(...)`
+4. 调用 `start_capture(...)` 启动抓包
+5. 用户在浏览器里正常操作
+6. 调用 `analyze_traffic(session_id)` 分析接口
+7. 让用户确认要生成的接口
+8. 调用 `generate_mcp_server(...)` 输出代码
+
+### 方式 2：已登录站点
+
+1. 先准备已有的 auth state 文件
+2. 调用 `start_capture(url, auth_state_path=...)`
+3. 直接在浏览器里继续操作
+4. 结束后调用 `stop_capture(session_id)`
+5. 执行分析和生成
+
+---
+
+## 关键模块说明
+
+### server.py
+这个文件最重要，它负责把能力暴露成 MCP 工具。
+
+它主要提供这些能力：
+- `probe_login()`
+- `http_login()`
+- `open_browser_login()`
+- `get_login_status()`
+- `start_capture()`
+- `get_capture_status()`
+- `stop_capture()`
+- `resume_capture()`
+- `list_sessions()`
+- `analyze_traffic()`
+- `update_endpoint()`
+- `generate_mcp_server()`
+- `extract_crypto_logic()`
+
+### capture.py
+负责抓包。它用 Playwright + CDP 监听网络事件，收集请求、响应和响应体，并写入 `capture.jsonl`。
+
+### analyzer.py
+负责整理抓到的请求，并做路径归一化。
+
+例如：
+- `/orders/123`
+- `/orders/456`
+- `/orders/latest`
+
+会被归一化成：
+- `/orders/{id}`
+- `/orders/latest`
+
+### generator.py
+负责把分析结果转成一份可运行的 Python/FastMCP 服务代码。
+
+输出包括：
+- `server.py`
+- `requirements.txt`
+- `.env.example`
+- `README.md`
+- `smoke_test.py`
+
+### auth.py / login_detector.py
+负责认证逻辑。它不仅支持直接登录，还支持“登录检测成功后继续收集”，而不是简单地登录完就关掉浏览器。
+
+这也是这个项目和传统单纯 MCP 的关键区别：
+- 它是“登录 → 操作 → 抓包 → 分析 → 生成”一条链路
+- 不是只提供几个接口调用工具
+
+---
+
+## 数据目录说明
+
+默认数据目录：
+
+```text
+~/.webapiextractor/
+├─ sessions/
+│  └─ {session_id}/
+│     ├─ capture.jsonl
+│     ├─ session.json
+│     ├─ analysis.json
+│     └─ ...
+├─ auth_states/
+│  └─ {site}.json
+├─ audit.log
+└─ ...
 ```
 
-### 脱敏与安全
-- 头部脱敏：Authorization 仅保留 scheme，Cookie/Set-Cookie 仅保留键名。
-- 负载脱敏：匹配密码类字段与 token 类字段，替换为占位符并记录路径。
-- 登录候选识别：基于 URL 模式与 POST 字段名判断是否为登录请求。
+说明：
+- `sessions/`：保存每次抓包会话
+- `auth_states/`：保存登录后的认证状态，里面是敏感数据，不能随意提交
+- `audit.log`：审计日志，用于记录工具调用
 
+如果需要自定义目录，可以用环境变量：
 
-### 加密检测
-- 密文特征：Base64/十六进制长度与字符集校验。
-- 脚本线索：扫描已保存脚本中是否包含常见加密库关键字。
-- 策略建议：根据是否存在密文与脚本线索给出 L1/L0/none 策略。
-
-
-### 登录探测
-- 无头浏览目标页，识别密码框、表单 action、文本与链接关键词。
-- 输出认证模式（form/interactive）、表单字段、指标（验证码/MFA/OAuth/SSO）与置信度。
-
-
-### 配置与存储
-- 配置项：数据根目录、响应体大小限制、空闲超时、最大并发会话数，均支持环境变量覆盖。
-- 存储：原子写入 session.json，支持服务器重启后恢复孤儿会话状态。
-
-
-## 依赖关系分析
-- 外部依赖：fastmcp、httpx、jinja2、playwright、pytest。
-- 模块耦合：
-  - server.py 聚合各子系统，作为统一入口。
-  - capture.py 依赖 redaction.py、storage.py。
-  - analyzer.py 依赖 redaction.py 的登录候选逻辑（间接）。
-  - generator.py 依赖 analyzer.py 的输出。
-  - auth.py 与 capture.py 共用 Playwright 能力。
-- 潜在循环：未发现直接循环依赖；server.py 集中编排。
-
-```mermaid
-graph LR
-Server["server.py"] --> Capture["capture.py"]
-Server --> Auth["auth.py"]
-Server --> Analyzer["analyzer.py"]
-Server --> Generator["generator.py"]
-Capture --> Redaction["redaction.py"]
-Capture --> Storage["storage.py"]
-Analyzer --> Crypto["crypto_analyzer.py"]
-Generator --> Analyzer
+```powershell
+$env:WEB_API_EXTRACTOR_DATA = "D:\web-api-extractor-data"
+$env:WEB_API_EXTRACTOR_RESPONSE_LIMIT = "262144"
+$env:WEB_API_EXTRACTOR_IDLE_TIMEOUT = "300"
 ```
+
+---
+
+## 这是 Skill 还是 MCP？
+
+结论：它同时具备两层含义。
+
+### 1）它是一个 MCP Server
+底层暴露了一组工具，供 Agent / MCP Client 调用。
+
+### 2）它也是一个 Skill 包
+它的工作流更像一个 Skill：
+- 先判断站点是否需要登录
+- 再让用户在浏览器里正常操作
+- 抓取实际请求
+- 识别接口
+- 生成可用代码
+
+所以你不能把它简单理解成“一个只有几个接口的 MCP 小工具”。它更接近“一个 Agent/Skill 能直接拿来用的 Web API 抽取工作流”。
+
+---
+
+## 适合的使用姿势
+
+对于新手，建议按这个顺序理解：
+
+1. 先看 `probe_login()`
+2. 再用 `http_login()` 或 `open_browser_login()`
+3. 然后 `start_capture()`
+4. 用户在页面中操作业务流程
+5. `analyze_traffic()` 生成接口列表
+6. `update_endpoint()` 修正描述
+7. `generate_mcp_server()` 输出代码
+
+这样最符合这个项目的真实使用方式。
+
+---
+
+## 注意事项
+
+- 它会抓真实网络请求，所以请在测试站点或授权站点中使用
+- 对敏感字段做了脱敏，但仍建议不要把认证数据放进仓库
+- 生成的接口工具可能具有真实副作用，写接口默认要特别小心
+- `generate_mcp_server()` 的默认策略是“只生成已确认的接口”，不要一次性全量生成
+
+---
+
+## 结论
+
+这个仓库的核心价值不是“单纯转一个 URL 到接口列表”，而是：
+
+“从真实浏览器行为中，自动发现 API、提炼认证方式、生成可运行的 MCP 工具。”
+
+这也正是它作为 Skill 的意义：它不只是能调用接口，而是能帮助 Agent 真正完成从页面操作到接口生成的整条链路。
+
+---
 
 ## 性能考量
 - 响应体限制：通过 WEB_API_EXTRACTOR_RESPONSE_LIMIT 控制响应体大小，避免大响应拖慢写入与分析。
@@ -236,11 +313,6 @@ Generator --> Analyzer
 - 页面加载超时：probe 或登录阶段可能因网络或站点渲染缓慢导致超时，适当增加超时时间。
 - 加密载荷：若 detect_crypto 返回 found=true，需补充密钥或运行时透传逻辑后再调用生成。
 - 审计日志：所有工具调用均被审计记录，便于回溯问题。
-
-## 结论
-WebAPIExtractor 将浏览器真实行为转化为可复用的 API 资产，通过自动化捕获、智能分析与代码生成，显著降低接口文档与测试准备的成本。其模块化设计使扩展新站点与新协议变得简单，适合在前后端协作、第三方集成与质量保障场景中广泛使用。
-
-[本节为总结性内容，不直接分析具体文件]
 
 ## 附录：快速开始与使用要点
 - 安装与初始化
