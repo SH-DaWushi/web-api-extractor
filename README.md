@@ -1,41 +1,48 @@
 # Web API Extractor
 
-这是一个“浏览器抓取 + 登录识别 + 接口分析 + 代码生成”的工具项目。
+这是一个“由 Agent 唤起、由浏览器真实交互驱动、并生成目标站点 MCP 工具”的 Skill 包。
 
-## 简介
-WebAPIExtractor 是一个基于 FastMCP 协议的自动化 Web API 发现与提取工具。它通过 Playwright 驱动浏览器、利用 CDP（Chrome DevTools Protocol）捕获网络流量，结合智能分析引擎对请求/响应进行归一化与模式识别，最终生成可运行的 Python/FastMCP 客户端代码，实现“从真实浏览器行为到可用接口”的端到端自动化。使用方法见[快速开始](https://github.com/shdawushi-dotcom/WebAPIExtractor/blob/main/Docs/content/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B.md)。
+它不是一个普通的独立脚本程序；它的定位是：
+- 作为 Skill 被 Agent 调用和唤起
+- 通过浏览器自动化监测用户与目标网站的真实操作
+- 监听并整理真实网络请求/响应
+- 识别认证流程、接口路径与参数结构
+- 最终生成可以对接目标站点的 Python + FastMCP 工具代码
 
-它不是单纯的一个 MCP 服务，而是一个可被 Agent / Skill 调用的能力包：
-- 下面有一个 FastMCP 的 MCP Server
-- 上层也可以被当作 Skill 使用
-- 真正的能力来自浏览器自动化、CDP 抓包、登录检测和接口分析
+一句话概括：
 
-如果你只是想快速知道它是干什么的，可以记住一句话：
-
-“它会在真实网站里登录并操作，然后自动抓取网络请求，识别 API，最后生成一个可运行的 Python + FastMCP 服务。”
+“它不直接给你一个静态 API 列表，而是让 Agent 在真实站点上完成登录、操作、抓包、分析和生成，最终产出一个可用于对接该网站的 MCP 工具。”
 
 ---
 
 ## 这个项目能做什么
 
-- 自动打开浏览器并访问目标网站
-- 检测是否需要登录
-- 支持普通表单登录、HTTP 登录和交互式浏览器登录
-- 监听页面请求和响应，抓取真实 API 流量
-- 过滤静态资源、跟踪脚本和无用请求
-- 归一化接口路径，比如 `/orders/123` 和 `/orders/456` 合并成 `/orders/{id}`
-- 识别鉴权字段、Cookie、token、认证头
-- 生成 Python + FastMCP 的接口封装代码
+- 让 Agent 识别目标站点是否需要登录
+- 监控用户在真实网站中的操作过程
+- 支持普通表单登录、HTTP 登录与交互式浏览器登录
+- 通过 CDP / Playwright 监听真实请求和响应
+- 过滤静态资源、JS 跟踪、无用请求和噪音流量
+- 把接口归一化，例如 `/orders/123` 和 `/orders/456` 合并为 `/orders/{id}`
+- 识别鉴权字段、Cookie、Token、认证头及数据结构
+- 生成符合目标站点的 Python + FastMCP MCP 工具代码
+- 让 Agent 自动化完成“页面行为 → API 抽取 → 工具生成”的闭环
 
 ---
 
 ## 适合谁
 
-- 需要从真实网站中抽取 API 的开发者
-- 需要快速生成 MCP 工具的 Agent/Skill 使用者
-- 想做浏览器行为到接口调用的自动化链路的人
+- 需要从真实网站中提取并整理 API 的开发者
+- 需要让 Agent 自动生成站点适配 MCP 工具的使用者
+- 希望把“浏览器交互 → 接口归并 → 代码生成”整条链路交给 AI 自动化的人
+- 需要把这个能力作为 Skill 导入到 Agent 环境中并由 Agent 主动调用的人
 
-不适合把它当做一个单独的“纯 API 接口库”；它更像是一个真实浏览器行为采集器 + 分析器 + 代码生成器。
+它不是一个“纯 API 接口库”，也不是一个单独的通用脚本工具。它更像是一个用于“站点行为观测与 API 发现”的 Agent Skill：
+- Agent 负责唤起它
+- 用户在目标站点中执行真实操作
+- 这个 Skill 负责记录实际请求与响应
+- 最终生成对接该站点的 MCP 工具代码
+
+如果你想把它当作复用能力包使用，最正确的方式不是单独运行 Python 脚本，而是把整个项目压缩包导入 Agent 的 Skill / 工具目录，随后由 Agent 负责唤起和执行。`SKILL.md` 就是这个入口文件。
 
 ---
 
@@ -105,6 +112,8 @@ WebAPIExtractor/
 
 ## 快速开始
 
+这里的“快速开始”指的是本地环境准备和底层运行方式；但它的主使用方式并不是把它当作普通独立程序来运行，而是把它作为 Agent Skill 导入并由 Agent 主动唤起。
+
 ### 1）安装依赖
 
 ```powershell
@@ -118,33 +127,36 @@ python -m pip install -r requirements.txt
 python -m playwright install chromium
 ```
 
-### 3）运行项目
+### 3）本地启动底层 MCP 服务（仅供调试/工具链运行）
 
 ```powershell
 python -m webapi_extractor
 ```
 
-或者安装为命令行工具：
+如果你正在一个支持 MCP 工具调用的环境中使用它，那么真正的流程不是“直接运行程序”，而是：
 
-```powershell
-python -m pip install -e .
-web-api-extractor
-```
+1. 把整个项目导入 Agent 的 Skill / 工具目录
+2. 由 Agent 识别 `SKILL.md`
+3. Agent 让用户在目标站点中完成真实操作
+4. Skill 监听真实请求并生成目标站点的 MCP 工具代码
 
 ---
 
 ## 典型使用流程
 
-### 方式 1：普通认证站点
+### 方式 1：Agent 作为主调度器（正确主路径）
 
-1. 调用 `probe_login(url)` 先看这个站点像不像需要登录
-2. 如果是简单表单，调用 `http_login(...)`
-3. 如果失败，调用 `open_browser_login(...)`
-4. 调用 `start_capture(...)` 启动抓包
-5. 用户在浏览器里正常操作
-6. 调用 `analyze_traffic(session_id)` 分析接口
-7. 让用户确认要生成的接口
-8. 调用 `generate_mcp_server(...)` 输出代码
+1. 把项目压缩包导入 Agent 支持的 Skill/工具目录
+2. Agent 识别 `SKILL.md` 并理解它是一个站点交互分析 + API 提取 + MCP 生成 Skill
+3. Agent 调用 `probe_login(url)` 判断站点是否需要登录
+4. 若需要登录，则调用 `http_login(...)` 或 `open_browser_login(...)`
+5. 用户在目标站点中执行真实业务操作
+6. Agent / Skill 通过 `start_capture(...)` 监听浏览器网络请求
+7. 调用 `analyze_traffic(session_id)` 识别与整理 API
+8. 通过 `update_endpoint(...)` 修正描述与备注
+9. 调用 `generate_mcp_server(...)` 生成目标站点适配的 MCP 工具
+
+这是这个项目的真实主流程：Agent 发起、用户操作、Skill 观察与生成。
 
 ### 方式 2：已登录站点
 
@@ -153,6 +165,17 @@ web-api-extractor
 3. 直接在浏览器里继续操作
 4. 结束后调用 `stop_capture(session_id)`
 5. 执行分析和生成
+
+### 方式 3：底层 MCP 工具链调用（仅作为执行接口）
+
+1. `probe_login(url)`
+2. `http_login(...)` 或 `open_browser_login(...)`
+3. `start_capture(...)`
+4. `stop_capture(session_id)`
+5. `analyze_traffic(session_id)`
+6. `generate_mcp_server(session_id, output_dir, endpoint_ids)`
+
+这个路径是底层工具接口，不是它的核心设计。
 
 ---
 
@@ -243,38 +266,81 @@ $env:WEB_API_EXTRACTOR_IDLE_TIMEOUT = "300"
 
 ---
 
-## 这是 Skill 还是 MCP？
+## 这是 Skill，还是 MCP？
 
-结论：它同时具备两层含义。
+结论：它同时包含两层能力，但最核心的定位是 Skill。
 
-### 1）它是一个 MCP Server
-底层暴露了一组工具，供 Agent / MCP Client 调用。
+### 1）底层是 MCP Server
+它暴露了一组工具，供 Agent / MCP Client 调用，例如：
+- `probe_login()`
+- `http_login()`
+- `open_browser_login()`
+- `start_capture()`
+- `analyze_traffic()`
+- `generate_mcp_server()`
 
-### 2）它也是一个 Skill 包
-它的工作流更像一个 Skill：
-- 先判断站点是否需要登录
-- 再让用户在浏览器里正常操作
-- 抓取实际请求
-- 识别接口
-- 生成可用代码
+这些是它运行时的工具层接口。
 
-所以你不能把它简单理解成“一个只有几个接口的 MCP 小工具”。它更接近“一个 Agent/Skill 能直接拿来用的 Web API 抽取工作流”。
+### 2）上层是 Agent 可唤起的 Skill
+真正的使用方式不是“直接拿一个 Python 程序当脚本跑”，而是：
+- Agent 识别这个 Skill
+- Agent 调用它来检测站点是否需要登录
+- Agent 让用户在真实页面中执行操作
+- Skill 监测浏览器交互，抓取真实请求
+- Skill 分析接口、补全描述、识别认证和参数结构
+- 最终生成目标站点的 MCP 工具代码
+
+所以它不是“一个普通程序 + 一组 MCP 方法”，而是“一个围绕真实站点交互展开的 Agent Skill，并在内部附带 MCP 执行接口”。
 
 ---
 
 ## 适合的使用姿势
 
-对于新手，建议按这个顺序理解：
+最核心的使用形式是：Agent 唤起 Skill，而不是用户直接以普通程序方式使用。
 
-1. 先看 `probe_login()`
-2. 再用 `http_login()` 或 `open_browser_login()`
-3. 然后 `start_capture()`
-4. 用户在页面中操作业务流程
-5. `analyze_traffic()` 生成接口列表
-6. `update_endpoint()` 修正描述
-7. `generate_mcp_server()` 输出代码
+### 方式 1：作为 Agent Skill 运行（推荐）
 
-这样最符合这个项目的真实使用方式。
+1. 把整个项目压缩包解压后导入到支持 Skill 的 Agent 环境
+2. Agent 识别 `SKILL.md` 和该项目的能力描述
+3. Agent 根据用户目标决定是否调用 `probe_login()`
+4. 如果站点需要登录，调用 `http_login()` 或 `open_browser_login()`
+5. 用户在目标站点里完成真实操作
+6. 用 `start_capture()` 监听实际网络请求
+7. `analyze_traffic()` 抽取接口并整理结构
+8. `update_endpoint()` 修正描述和补充注释
+9. `generate_mcp_server()` 生成对接该站点的 MCP 工具
+
+这是真正的主路径：Agent 负责组织、用户负责操作站点，Skill 负责观察和生成。
+
+### 方式 2：作为 MCP 工具链调用
+
+如果你已经在一个能调用 MCP 工具的环境中运行它，也可以按底层工具顺序调用：
+
+1. `probe_login(url)`
+2. `http_login(...)` 或 `open_browser_login(...)`
+3. `start_capture(...)`
+4. `stop_capture(session_id)`
+5. `analyze_traffic(session_id)`
+6. `generate_mcp_server(session_id, output_dir, endpoint_ids)`
+
+这个路径是底层执行接口，不是它的主设计定位。
+
+### 方式 3：作为辅助的命令行入口
+
+`python -m webapi_extractor` 这种形式主要是为了让 MCP 服务本身能启动；它不是这个项目的核心使用方式。
+
+---
+
+## 关键设计判断
+
+这个项目的核心价值，不在于把它当成一个“单独运行的软件”，而在于：
+
+- 它依赖真实用户操作和浏览器行为
+- 它通过观察真实请求来发现接口
+- 它把“网页行为”转成“可调用 API 结构”
+- 它最终生成一个能够对接目标站点的 MCP 工具
+
+这就是它作为 Skill 的意义，而不是普通脚本的意义。
 
 ---
 
