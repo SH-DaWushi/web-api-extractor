@@ -12,6 +12,8 @@
 9. [结论](#结论)
 10. [附录：快速开始与使用要点](#附录快速开始与使用要点)
 
+<a href=https://github.com/shdawushi-dotcom/WebAPIExtractor/blob/main/Docs/content/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B.md>快速开始</a>
+
 ## 简介
 WebAPIExtractor 是一个基于 FastMCP 协议的自动化 Web API 发现与提取工具。它通过 Playwright 驱动浏览器、利用 CDP（Chrome DevTools Protocol）捕获网络流量，结合智能分析引擎对请求/响应进行归一化与模式识别，最终生成可运行的 Python/FastMCP 客户端代码，实现“从真实浏览器行为到可用接口”的端到端自动化。
 
