@@ -1,0 +1,18 @@
+{
+  "servers": {
+    "web-api-extractor": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "-m",
+        "webapi_extractor"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "WEB_API_EXTRACTOR_DATA": "${userHome}/.webapiextractor",
+        "WEB_API_EXTRACTOR_RESPONSE_LIMIT": "262144",
+        "WEB_API_EXTRACTOR_IDLE_TIMEOUT": "300"
+      }
+    }
+  }
+}
