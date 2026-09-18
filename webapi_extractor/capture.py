@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .control_bar import CONTROL_BAR_JS
+from .control_bar import CONTROL_BAR_JS, LOGIN_CONTROL_BAR_JS
 from .redaction import is_auth_candidate, redact_headers, redact_payload
 from .storage import SessionStore, utc_now
 
@@ -39,6 +39,7 @@ class CaptureSession:
         self.event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self.writer_task: asyncio.Task[Any] | None = None
         self.idle_task: asyncio.Task[Any] | None = None
+        self.login_task: asyncio.Task[Any] | None = None
         self.stop_lock = asyncio.Lock()
         self.script_bytes = 0
 
@@ -62,11 +63,13 @@ class CaptureSession:
         self.directory.mkdir(parents=True, exist_ok=True)
         self.writer_task = asyncio.create_task(self._writer())
         self.idle_task = asyncio.create_task(self._idle_monitor())
+        if not self.auth_ready:
+            self.login_task = asyncio.create_task(self._login_monitor())
         self.playwright = await async_playwright().start()
         state = self.auth_state_path if self.auth_state_path and Path(self.auth_state_path).exists() else None
         self.browser = await self.playwright.chromium.launch(headless=False)
         self.context = await self.browser.new_context(storage_state=state)
-        await self.context.add_init_script(CONTROL_BAR_JS)
+        await self.context.add_init_script(CONTROL_BAR_JS if self.auth_ready else LOGIN_CONTROL_BAR_JS)
         self.context.on("page", lambda page: asyncio.create_task(self.attach_page(page)))
         page = await self.context.new_page()
         await self.attach_page(page)
@@ -77,6 +80,51 @@ class CaptureSession:
         if self.status == "authenticating":
             self.status = "capturing"
             self.pause_reason = None
+
+    async def _enter_capturing(self) -> None:
+        """Finish login: start recording and switch the in-page bar to capture mode."""
+        self.mark_auth_ready()
+        self.last_activity = time.monotonic()
+        for page in self.pages:
+            try:
+                await page.evaluate("() => window.__mcp_set_mode && window.__mcp_set_mode('capture')")
+            except Exception:
+                pass
+
+    async def _login_monitor(self) -> None:
+        """Best-effort auto-detect using the same evidence standard as auth.py:
+        a token-like cookie on the *target* site's domain, stable for ~5s.
+
+        Manual fallbacks remain: the in-page "登录完成" button (control action
+        ``login_complete``) and the agent-side ``confirm_login_ready`` tool.
+        """
+        from urllib.parse import urlparse as _urlparse
+
+        target_host = _urlparse(self.url).hostname or ""
+        target_zone = ".".join(target_host.split(".")[-2:]) if target_host else ""
+        evidence_since: float | None = None
+        while self.status == "authenticating":
+            await asyncio.sleep(1)
+            if not getattr(self, "context", None):
+                continue
+            try:
+                cookies = await self.context.cookies()
+                has_token_cookie = any(
+                    any(marker in (c.get("name") or "").lower() for marker in ("token", "session", "sid", "auth"))
+                    and target_zone
+                    and target_zone in (c.get("domain") or "")
+                    for c in cookies
+                )
+                if has_token_cookie:
+                    if evidence_since is None:
+                        evidence_since = time.monotonic()
+                    elif time.monotonic() - evidence_since >= 5:
+                        await self._enter_capturing()
+                        break
+                else:
+                    evidence_since = None
+            except Exception:
+                pass
 
     async def attach_page(self, page: Any) -> None:
         if page in self.pages:
@@ -182,7 +230,10 @@ class CaptureSession:
                 await self.pause("idle_timeout")
 
     async def control(self, action: str) -> None:
-        if action == "pause":
+        if action == "login_complete":
+            if self.status == "authenticating":
+                await self._enter_capturing()
+        elif action == "pause":
             await self.pause("control_bar")
         elif action == "resume":
             await self.resume()

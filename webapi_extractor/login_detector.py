@@ -24,7 +24,11 @@ def detect_login_success(
     session = dict(session_storage or {})
 
     lower_url_text = " ".join(url.lower() for url in urls)
-    has_auth_header = any(name.lower() in {"authorization", "x-auth-token", "cookie"} for name in headers)
+    has_auth_header = any(
+        name.lower() in {"authorization", "x-auth-token"}
+        and str(headers.get(name, "")).strip() not in {"", "Bearer auto-detected"}
+        for name in headers
+    )
     cookie_value = "" if not storage.get("cookies") else str(storage["cookies"])
     session_values = " ".join(str(value).lower() for value in session.values())
     tokenish = any(key.lower().find("token") >= 0 or key.lower().find("session") >= 0 for key in session)
@@ -38,13 +42,10 @@ def detect_login_success(
         evidence.append("session cookie observed")
     if tokenish:
         evidence.append("sessionStorage token observed")
-    if auth_redirect:
-        evidence.append("authenticated landing page detected")
 
-    completed = bool(
-        (has_auth_header or has_session_cookie or tokenish or auth_redirect)
-        and (len(evidence) >= 1)
-    )
+    # Conservative verdict: a URL redirect alone never proves login (the login
+    # page itself often matches /account|/oauth). Credential evidence required.
+    completed = bool(has_auth_header or has_session_cookie or tokenish)
     return {
         "status": "completed" if completed else "waiting",
         "auth_ready": completed,

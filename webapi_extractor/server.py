@@ -17,8 +17,16 @@ from .auth import LoginManager, http_login as perform_http_login
 from .capture import CaptureSession
 from .config import Settings
 from .crypto_analyzer import detect_crypto
-from .generator import generate
+from .generator import generate, regenerate
 from .probe import probe_login as run_probe_login
+from .project import (
+    diff_hosts,
+    diff_registry,
+    export_user_package,
+    load_registry,
+    merge_registry,
+    session_to_registry_entries,
+)
 from .storage import SessionStore, utc_now
 
 
@@ -185,9 +193,29 @@ async def analyze_traffic(session_id: str) -> dict[str, Any]:
     if metadata is None:
         return {"success": False, "error": "session_not_found", "session_id": session_id}
     result = analyze_capture(store.session_path(session_id))
-    result["session_id"] = session_id
-    result["crypto_findings"] = detect_crypto(store.session_path(session_id), result)
-    return result
+    crypto = detect_crypto(store.session_path(session_id), result)
+    # Return a compact summary — the full result (schemas etc.) stays in analysis.json.
+    host_counts: dict[str, int] = {}
+    digest: list[dict[str, Any]] = []
+    for endpoint in result.get("endpoints", []):
+        host_counts[endpoint["host"]] = host_counts.get(endpoint["host"], 0) + 1
+        digest.append({
+            "endpoint_id": endpoint["endpoint_id"], "method": endpoint["method"],
+            "host": endpoint["host"], "path": endpoint["path"],
+            "auth_required": endpoint.get("auth_required"),
+            "sample_count": endpoint.get("sample_count"),
+            "description": endpoint.get("description"),
+        })
+    return {
+        "session_id": session_id,
+        "stats": result.get("stats"),
+        "base_url": result.get("base_url"),
+        "host_counts": host_counts,
+        "auth_schemes": (result.get("auth_metadata", {}) or {}).get("auth_schemes", {}),
+        "endpoints": digest,
+        "crypto_found": bool(crypto.get("found")),
+        "full_result_path": str(store.session_path(session_id) / "analysis.json"),
+    }
 
 
 @mcp.tool()
@@ -241,6 +269,94 @@ async def extract_crypto_logic(session_id: str) -> dict[str, Any]:
     result = detect_crypto(store.session_path(session_id), json.loads(analysis_path.read_text(encoding="utf-8")))
     result["session_id"] = session_id
     return result
+
+
+@mcp.tool()
+@audited
+async def confirm_login(login_session_id: str) -> dict[str, Any]:
+    """Layer-3 login confirmation: the agent asks the user out-of-band and confirms."""
+    return login_manager.confirm(login_session_id)
+
+
+@mcp.tool()
+@audited
+async def confirm_login_ready(session_id: str) -> dict[str, Any]:
+    """Manually flip a capture session from authenticating to capturing (agent-side)."""
+    capture = capture_sessions.get(session_id)
+    if capture is None:
+        return {"success": False, "error": "capture_session_not_found", "session_id": session_id}
+    if capture.status != "authenticating":
+        return {"success": False, "error": "not_authenticating", "status": capture.status}
+    await capture._enter_capturing()
+    store.write_metadata(session_id, capture.metadata())
+    return {"success": True, "session_id": session_id, "status": capture.status}
+
+
+# --------------------------------------------------------------------------- #
+# 项目（registry）管理工具 —— 仅 IT 管理态；用户态子 MCP 不包含这些能力
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+@audited
+async def diff_capture(project_dir: str, session_id: str) -> dict[str, Any]:
+    """只读：对比一次新抓包与项目 registry 的差异（新增/参数变化/未见/鉴权漂移）。"""
+    try:
+        registry = load_registry(project_dir)
+    except FileNotFoundError as exc:
+        return {"success": False, "error": str(exc)}
+    analysis_path = store.session_path(session_id) / "analysis.json"
+    if not analysis_path.exists():
+        return {"success": False, "error": "analysis_not_found",
+                "message": "先对该 session 调用 analyze_traffic。"}
+    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    entries, hosts = session_to_registry_entries(analysis, session_id)
+    report = diff_registry(registry, entries)
+    report["auth_changes"] = diff_hosts(registry.get("hosts", {}), hosts)
+    report["success"] = True
+    report["project_dir"] = project_dir
+    report["registry_version"] = registry.get("registry_version")
+    return report
+
+
+@mcp.tool()
+@audited
+async def merge_capture(
+    project_dir: str,
+    session_id: str,
+    endpoint_keys: list[str] | None = None,
+    allow_auth_change: bool = False,
+) -> dict[str, Any]:
+    """确认后把抓包合并进 registry（version+1）。鉴权 scheme 变化须显式 allow_auth_change=true。
+
+    endpoint_keys 形如 ["GET|node.example.com|/pets"]；不传则合并全部。
+    """
+    analysis_path = store.session_path(session_id) / "analysis.json"
+    if not analysis_path.exists():
+        return {"success": False, "error": "analysis_not_found",
+                "message": "先对该 session 调用 analyze_traffic。"}
+    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    entries, hosts = session_to_registry_entries(analysis, session_id)
+    keys = None
+    if endpoint_keys is not None:
+        keys = [tuple(k.split("|", 2)) for k in endpoint_keys]
+    return merge_registry(project_dir, entries, hosts, session_id, keys, allow_auth_change)
+
+
+@mcp.tool()
+@audited
+async def regenerate_server(project_dir: str) -> dict[str, Any]:
+    """从 registry 重出 server.py 等文件（旧文件自动留 .bak）。locked 项目拒绝。"""
+    return regenerate(project_dir)
+
+
+@mcp.tool()
+@audited
+async def export_project(project_dir: str, output_dir: str) -> dict[str, Any]:
+    """导出用户态分发包：仅运行与诊断能力，不含任何 registry 写入/再生成代码。"""
+    try:
+        load_registry(project_dir)
+    except FileNotFoundError as exc:
+        return {"success": False, "error": str(exc)}
+    return export_user_package(project_dir, output_dir)
 
 
 def main() -> None:

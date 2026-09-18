@@ -1,7 +1,14 @@
 # -*- coding: utf-8 -*-
 """Minimal streamable-HTTP MCP client driver for web-api-extractor.
 
-Usage: python mcp_call.py <tool_name> [json_arguments]
+Usage:
+    python mcp_call.py <tool_name> [json_arguments]
+    python mcp_call.py <tool_name> @args.json     # read arguments from a JSON file
+    python mcp_call.py <tool_name> -              # read arguments from stdin
+
+The @file / stdin forms avoid Windows shell quoting issues entirely and are the
+recommended way to pass arguments containing Windows paths.
+
 Prints the tool result as JSON. Reuses a session id cached in .mcp_session.
 """
 import json
@@ -16,6 +23,16 @@ HEADERS = {
     "Accept": "application/json, text/event-stream",
 }
 CACHE = pathlib.Path(__file__).resolve().parent / ".mcp_session"
+
+
+def load_args(raw: str) -> dict:
+    """Parse tool arguments from a literal JSON string, '@file' or '-' (stdin)."""
+    raw = raw.strip()
+    if raw == "-":
+        raw = sys.stdin.read()
+    elif raw.startswith("@"):
+        raw = pathlib.Path(raw[1:]).read_text(encoding="utf-8")
+    return json.loads(raw) if raw else {}
 
 
 def post(client: httpx.Client, payload: dict, sid: str | None):
@@ -39,7 +56,7 @@ def post(client: httpx.Client, payload: dict, sid: str | None):
 
 def main():
     tool = sys.argv[1]
-    args = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+    args = load_args(sys.argv[2]) if len(sys.argv) > 2 else {}
     sid = CACHE.read_text().strip() if CACHE.exists() else None
     with httpx.Client(timeout=300) as client:
         if not sid:

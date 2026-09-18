@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import secrets
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -15,7 +16,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from .login_detector import detect_login_success
+from .control_bar import LOGIN_CONTROL_BAR_JS
 from .redaction import is_auth_candidate
 
 
@@ -134,7 +135,12 @@ class LoginManager:
         return {
             "login_session_id": session_id,
             "status": "waiting",
-            "message": "浏览器已打开，请在页面中完成登录，登录成功后会自动关闭；无需点击任何控制条",
+            "message": (
+                "浏览器已打开，请完成登录。登录完成的判定（三层，自动进行）："
+                "① 检测到目标站点的 token/session Cookie 并稳定 5 秒 → 自动完成；"
+                "② 弹出的系统对话框点「是」；"
+                "③ 60 秒后状态变为 waiting_user_confirm，由 Agent 询问用户后调用 confirm_login 确认。"
+            ),
         }
 
     async def _run(self, record: LoginSession) -> None:
@@ -143,35 +149,47 @@ class LoginManager:
             async with async_playwright() as playwright:
                 record.browser = await playwright.chromium.launch(headless=False)
                 record.context = await record.browser.new_context()
-                page = await record.context.new_page()
+                # Decorative 4th path: an in-page bar for well-behaved sites.
+                # NOT relied upon — it breaks under CSP / iframes / SSO popups.
+                try:
+                    await record.context.add_init_script(LOGIN_CONTROL_BAR_JS)
+                    page = await record.context.new_page()
+                    await page.expose_binding("__mcp_control", lambda source, action: self._control(record, action))
+                except Exception:
+                    page = await record.context.new_page()
                 await page.goto(record.url, wait_until="domcontentloaded", timeout=30000)
 
-                deadline = asyncio.get_running_loop().time() + record.timeout_seconds
-                while record.status == "waiting" and asyncio.get_running_loop().time() < deadline:
+                # Layer 2 (backup): native OS dialog, fully outside the target page —
+                # immune to CSP / iframes / cross-origin popups that break in-page bars.
+                self._spawn_native_confirm(record)
+
+                target_host = urlparse(record.url).hostname or ""
+                loop = asyncio.get_running_loop()
+                started = loop.time()
+                deadline = started + record.timeout_seconds
+                evidence_since: float | None = None
+                no_evidence_confirm_at = started + 60  # after this, agent may confirm out-of-band
+
+                while record.status in {"waiting", "waiting_user_confirm"} and loop.time() < deadline:
                     try:
-                        cookies = await record.context.cookies()
-                        session_storage = await page.evaluate("() => { const raw = {}; for (let i = 0; i < window.sessionStorage.length; i++) { const key = window.sessionStorage.key(i); raw[key] = window.sessionStorage.getItem(key); } return raw; }")
-                        url_history = [page.url]
-                        if hasattr(page, "context"):
-                            url_history.extend([page.url])
-                        result = detect_login_success(
-                            request_urls=url_history,
-                            observed_headers={
-                                "Authorization": "Bearer auto-detected",
-                                "Cookie": "" if not cookies else "; ".join(f"{cookie['name']}={cookie['value']}" for cookie in cookies),
-                            },
-                            storage_state={"cookies": cookies},
-                            session_storage=session_storage,
-                        )
-                        if result["auth_ready"]:
-                            record.status = "completed"
-                            record.completed.set()
-                            break
+                        if await self._login_evidence(record, page, target_host):
+                            if evidence_since is None:
+                                evidence_since = loop.time()
+                            # Layer 1 (primary): stable credential evidence for 5s → auto-complete.
+                            elif loop.time() - evidence_since >= 5:
+                                record.status = "completed"
+                                record.completed.set()
+                                break
+                        else:
+                            evidence_since = None
+                            if record.status == "waiting" and loop.time() >= no_evidence_confirm_at:
+                                # Layer 3 (fallback): out-of-band confirmation via confirm_login tool.
+                                record.status = "waiting_user_confirm"
                     except Exception:
                         pass
                     await asyncio.sleep(1)
 
-                if record.status == "waiting":
+                if record.status in {"waiting", "waiting_user_confirm"}:
                     record.status = "timeout_failed"
                 if record.status == "completed":
                     storage_path = self.auth_states_dir / f"{_site_key(record.url)}.json"
@@ -184,6 +202,72 @@ class LoginManager:
         except Exception as exc:
             record.status = "cancelled"
             record.auth_summary = {"error": f"{type(exc).__name__}: {exc}"}
+
+    async def _login_evidence(self, record: LoginSession, page: Any, target_host: str) -> bool:
+        """Layer 1 evidence: a token-like cookie on the *target* site's domain,
+        while the browser has left any IdP and returned to the target site."""
+        cookies = await record.context.cookies()
+        target_zone = ".".join(target_host.split(".")[-2:]) if target_host else ""
+        has_token_cookie = any(
+            any(marker in (cookie.get("name") or "").lower() for marker in ("token", "session", "sid", "auth"))
+            and target_zone
+            and target_zone in (cookie.get("domain") or "")
+            for cookie in cookies
+        )
+        on_target_site = target_host in (urlparse(page.url).hostname or "")
+        return has_token_cookie and on_target_site
+
+    def _spawn_native_confirm(self, record: LoginSession) -> None:
+        """Layer 2: OS-native dialog (Windows MessageBoxW, else tkinter) in a daemon
+        thread so the user can confirm even when in-page signals are impossible."""
+        import threading
+
+        def _worker() -> None:
+            try:
+                if sys.platform == "win32":
+                    import ctypes
+
+                    # 4 = Yes/No, 0x30 = question icon, 0x40000 = topmost
+                    answer = ctypes.windll.user32.MessageBoxW(
+                        0,
+                        "已完成网站登录？\n\n是 = 登录完成，保存登录态\n否 = 还没登好（浏览器保持打开）",
+                        "WebAPIExtractor 登录确认",
+                        4 | 0x20 | 0x40000,
+                    )
+                    if answer == 6 and record.status in {"waiting", "waiting_user_confirm"}:  # IDYES
+                        record.status = "completed"
+                        record.completed.set()
+                else:
+                    import tkinter as tk
+                    from tkinter import messagebox
+
+                    root = tk.Tk()
+                    root.withdraw()
+                    root.attributes("-topmost", True)
+                    answer = messagebox.askyesno(
+                        "WebAPIExtractor 登录确认",
+                        "已完成网站登录？\n\n是 = 登录完成，保存登录态\n否 = 还没登好（浏览器保持打开）",
+                    )
+                    root.destroy()
+                    if answer and record.status in {"waiting", "waiting_user_confirm"}:
+                        record.status = "completed"
+                        record.completed.set()
+            except Exception:
+                pass  # Layer 2 is best-effort; layers 1/3 remain available.
+
+        threading.Thread(target=_worker, daemon=True, name="wae-login-confirm").start()
+
+    def confirm(self, session_id: str) -> dict[str, Any]:
+        """Layer 3 entry point: the agent confirms login on the user's behalf after
+        asking them out-of-band (chat). Called by the confirm_login MCP tool."""
+        record = self.sessions.get(session_id)
+        if record is None:
+            return {"success": False, "error": "login_session_not_found", "login_session_id": session_id}
+        if record.status not in {"waiting", "waiting_user_confirm"}:
+            return {"success": False, "error": "not_waiting", "status": record.status}
+        record.status = "completed"
+        record.completed.set()
+        return {"success": True, "login_session_id": session_id, "status": "completed"}
 
     def _control(self, record: LoginSession, action: str) -> None:
         if action == "login_complete":

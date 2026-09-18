@@ -8,13 +8,16 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 
 VALUE_SHAPES = (
-    re.compile(r"^\d+$"),
-    re.compile(r"^[0-9a-f]{8,}$", re.I),
-    re.compile(r"^[A-Za-z0-9]{8,}$"),
+    re.compile(r"^\d+$"),                      # 123, 6463
+    re.compile(r"^[0-9a-f]{8,}$", re.I),       # hex ids
+    # Generic alphanumeric ids MUST contain a digit and be >= 6 chars — otherwise
+    # plain words like "community" (9 chars, no digit) or "next2" (5 chars) match
+    # and whole literal path segments get wrongly collapsed into {id}.
+    re.compile(r"^(?=.*\d)[A-Za-z0-9_-]{6,}$"),
 )
 
 
@@ -48,10 +51,12 @@ def normalize_paths(paths: list[str]) -> list[NormalizedPath]:
             normalized: list[str] = []
             for column in columns:
                 values = list(column)
+                # Strict ">" : with 2 identical samples distinct_ratio == 0.5 exactly,
+                # and a constant column must never be parameterized.
                 distinct_ratio = len(set(values)) / len(values)
                 shaped_ratio = sum(_looks_like_parameter(value) for value in values) / len(values)
                 current = values[row]
-                normalized.append("{id}" if distinct_ratio >= 0.5 and shaped_ratio >= 0.8 and _looks_like_parameter(current) else current)
+                normalized.append("{id}" if distinct_ratio > 0.5 and shaped_ratio >= 0.8 and _looks_like_parameter(current) else current)
             variants[tuple(normalized)].append(index)
         for normalized, indexes in variants.items():
             names = tuple("id" for value in normalized if value == "{id}")
@@ -140,6 +145,13 @@ def analyze_capture(session_dir: Path, tracking_domains: set[str] | None = None)
                         values.append(parsed_value)
             endpoint_id = f"ep_{len(endpoints) + 1:03d}"
             auth_required = any(sample["request"].get("headers", {}).get("Authorization") or sample["request"].get("auth_candidate") for sample in selected)
+            # Query-parameter samples across all captured URLs of this endpoint —
+            # the generator turns these into typed function signatures.
+            query_params: dict[str, list[str]] = defaultdict(list)
+            for sample in selected:
+                for key, value in parse_qsl(urlsplit(sample["request"].get("url", "")).query):
+                    if value not in query_params[key]:
+                        query_params[key].append(value)
             endpoints.append({
                 "endpoint_id": endpoint_id,
                 "method": method,
@@ -149,6 +161,7 @@ def analyze_capture(session_dir: Path, tracking_domains: set[str] | None = None)
                 "sample_count": len(selected),
                 "single_sample": len(selected) < 2,
                 "auth_required": auth_required,
+                "query_params": {k: v for k, v in query_params.items()},
                 "request_schema": _json_schema(request_body_values[0], request_body_values) if request_body_values else None,
                 "response_schema": _json_schema(response_values[0], response_values) if response_values else None,
                 "description": None,
@@ -161,6 +174,29 @@ def analyze_capture(session_dir: Path, tracking_domains: set[str] | None = None)
     base_host = max(host_counts, key=host_counts.get) if host_counts else None
     for endpoint in endpoints:
         endpoint["cross_host"] = endpoint["host"] != base_host
-    result = {"endpoints": endpoints, "auth_metadata": {"auth_candidates": auth_candidates}, "stats": {"total": len(requests), "filtered": filtered, "unique": len(endpoints)}, "base_url": f"https://{base_host}" if base_host else None}
+    # Per-host auth schemes: redacted headers keep the scheme ("Basic ***") and
+    # cookie names, which is exactly what the generator needs to emit correct auth.
+    auth_schemes: dict[str, dict[str, Any]] = {}
+    for (method, host), samples in grouped.items():
+        scheme: str | None = None
+        cookie_names: list[str] = []
+        for sample in samples:
+            headers = sample["request"].get("headers", {}) or {}
+            for name, value in headers.items():
+                if name.lower() == "authorization" and value:
+                    scheme = str(value).split(" ", 1)[0]
+                elif name.lower() == "cookie" and value:
+                    for part in str(value).split(";"):
+                        cname = part.split("=", 1)[0].strip()
+                        if cname and cname not in cookie_names:
+                            cookie_names.append(cname)
+        if host not in auth_schemes or scheme:
+            auth_schemes[host] = {"scheme": scheme or auth_schemes.get(host, {}).get("scheme"), "cookie_names": cookie_names or auth_schemes.get(host, {}).get("cookie_names", [])}
+    result = {
+        "endpoints": endpoints,
+        "auth_metadata": {"auth_candidates": auth_candidates, "auth_schemes": auth_schemes},
+        "stats": {"total": len(requests), "filtered": filtered, "unique": len(endpoints)},
+        "base_url": f"https://{base_host}" if base_host else None,
+    }
     (session_dir / "analysis.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return result
