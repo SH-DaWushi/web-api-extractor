@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .control_bar import CONTROL_BAR_JS, LOGIN_CONTROL_BAR_JS
+from .domain import same_site
 from .redaction import is_auth_candidate, redact_headers, redact_payload
 from .storage import SessionStore, utc_now
 
@@ -123,7 +124,6 @@ class CaptureSession:
         from urllib.parse import urlparse as _urlparse
 
         target_host = _urlparse(self.url).hostname or ""
-        target_zone = ".".join(target_host.split(".")[-2:]) if target_host else ""
         evidence_since: float | None = None
         while self.status == "authenticating":
             await asyncio.sleep(1)
@@ -133,8 +133,7 @@ class CaptureSession:
                 cookies = await self.context.cookies()
                 has_token_cookie = any(
                     any(marker in (c.get("name") or "").lower() for marker in ("token", "session", "sid", "auth"))
-                    and target_zone
-                    and target_zone in (c.get("domain") or "")
+                    and same_site(c.get("domain") or "", target_host)
                     for c in cookies
                 )
                 if has_token_cookie:
