@@ -13,6 +13,9 @@ class Settings:
     response_body_limit: int = 256 * 1024
     idle_timeout_seconds: int = 5 * 60
     max_sessions: int = 3
+    # Issue #2: 分析期的体积/频次启发式阈值（标记待复核，不删除）。
+    noise_response_bytes: int = 1024 * 1024
+    noise_sample_count: int = 50
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -20,9 +23,13 @@ class Settings:
         response_limit = int(os.environ.get("WEB_API_EXTRACTOR_RESPONSE_LIMIT", 256 * 1024))
         idle_timeout = int(os.environ.get("WEB_API_EXTRACTOR_IDLE_TIMEOUT", 5 * 60))
         max_sessions = int(os.environ.get("WEB_API_EXTRACTOR_MAX_SESSIONS", 3))
+        noise_bytes = int(os.environ.get("WEB_API_EXTRACTOR_NOISE_RESPONSE_BYTES", 1024 * 1024))
+        noise_samples = int(os.environ.get("WEB_API_EXTRACTOR_NOISE_SAMPLE_COUNT", 50))
         if response_limit <= 0 or idle_timeout <= 0 or max_sessions <= 0:
             raise ValueError("Extractor limits must be positive")
-        return cls(root, response_limit, idle_timeout, max_sessions)
+        if noise_bytes <= 0 or noise_samples <= 0:
+            raise ValueError("Extractor noise thresholds must be positive")
+        return cls(root, response_limit, idle_timeout, max_sessions, noise_bytes, noise_samples)
 
     @property
     def sessions_dir(self) -> Path:

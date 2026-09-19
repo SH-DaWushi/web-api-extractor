@@ -25,22 +25,77 @@ VALUE_SHAPES = (
 
 # --------------------------------------------------------------------------- #
 # C-3: 内置噪音规则（标记 noise:true，不删除——保留人工复核权）
+#
+# Issue #2: 规则保持**通用**——只收录跨站点成立的遥测/指纹域名与框架内部
+# 元数据路径，不得硬编码单一目标系统（Issue #8 的教训）。
 # --------------------------------------------------------------------------- #
 NOISE_PATH_PATTERNS = (
+    # 通用埋点/统计路径
     r"/system/stat/", r"/system/traffic/", r"/tracking/", r"heartbeat",
     r"/breadcrumb", r"/config/menu/", r"/config/banner", r"/visit-history/",
     r"/analytics/", r"/telemetry/", r"/beacon", r"^(?:log|collect)[/-]",
+    # 框架/服务端内部元数据（Dynamics/CRM、SAP、SharePoint、Graph 等常见形态）
+    r"GetClientMetadata", r"/uclient/", r"/_static/", r"/webresources/",
+    r"/formattedvalue|/metadata/|/\$metadata\b",
 )
+
+# 遥测/埋点/浏览器指纹域名（通用生态，可被 tracking_domains 参数扩展）
 NOISE_DOMAINS = {
+    # 中文互联网生态
     "r.clarity.ms", "otheve.beacon.qq.com", "aegis.qq.com", "graph.qq.com",
     "www.google-analytics.com", "analytics.google.com", "log.zhugeio.com",
+    # Microsoft 生态（遥测 + 浏览器配置/指纹）
+    "vortex.data.microsoft.com", "browser.pipe.aria.microsoft.com",
+    "fpc.msedge.net", "v10.events.data.microsoft.com",
+    "settings-win.data.microsoft.com", "watson.telemetry.microsoft.com",
+    # 其它常见遥测/分析生态
+    "www.googletagmanager.com", "stats.g.doubleclick.net",
+    "api.segment.io", "cdn.segment.com", "sentry.io", "browser.sentry-cdn.com",
+    "js.sentry-cdn.com", "rum.browser-intake-datadoghq.com",
+    "browser-intake-datadoghq.com", "api.amplitude.com", "cdn.amplitude.com",
+    "api.mixpanel.com", "cdn.mxpnl.com", "static.hotjar.com", "script.hotjar.com",
+    "in.hotjar.com", "connect.facebook.net", "www.facebook.com",
+    "bat.bing.com", "c.clarity.ms", "sb.scorecardresearch.com",
 }
+# 子域后缀匹配（同域下大量随机子域的埋点）
+NOISE_HOST_SUFFIXES = (
+    ".clarity.ms", ".hotjar.com", ".sentry.io", ".datadoghq.com",
+    ".amplitude.com", ".mixpanel.com", ".segment.io", ".doubleclick.net",
+)
 
 
 def _is_noise(host: str, path: str) -> bool:
-    if host in NOISE_DOMAINS or host.endswith(".clarity.ms"):
+    if host in NOISE_DOMAINS or host.endswith(NOISE_HOST_SUFFIXES):
         return True
     return any(re.search(p, path, re.I) for p in NOISE_PATH_PATTERNS)
+
+
+def _heavy_response_suggestion(
+    sample_count: int,
+    total_size: int,
+    max_size: int,
+    response_bytes: int,
+    sample_threshold: int,
+) -> dict[str, Any] | None:
+    """Issue #2 体积/频次启发式：只标记「待复核」，绝不直接当噪音删除。
+
+    命中条件（任一）：
+      * 累计响应体 >= 阈值（默认 1MB）——通常是框架元数据/静态资源；
+      * 单个响应体 >= 阈值且累计 >= 阈值/2——单次巨型响应；
+      * 采样次数 >= 阈值（默认 50）——轮询/心跳类高频端点。
+    """
+    reasons: list[str] = []
+    if total_size >= response_bytes:
+        reasons.append(f"total_response_bytes={total_size}>={response_bytes}")
+    if max_size >= response_bytes and total_size >= response_bytes // 2:
+        reasons.append(f"single_response_bytes={max_size}>={response_bytes}")
+    if sample_count >= sample_threshold:
+        reasons.append(f"sample_count={sample_count}>={sample_threshold}")
+    if not reasons:
+        return None
+    return {"review_suggested": True, "reasons": reasons,
+            "total_response_bytes": total_size, "max_response_bytes": max_size,
+            "sample_count": sample_count}
 
 
 # --------------------------------------------------------------------------- #
@@ -262,7 +317,14 @@ def _load_events(capture_path: Path) -> list[dict[str, Any]]:
     return events
 
 
-def analyze_capture(session_dir: Path, tracking_domains: set[str] | None = None) -> dict[str, Any]:
+def analyze_capture(
+    session_dir: Path,
+    tracking_domains: set[str] | None = None,
+    response_bytes_threshold: int = 1024 * 1024,
+    sample_count_threshold: int = 50,
+) -> dict[str, Any]:
+    """分析一次抓包。response_bytes_threshold / sample_count_threshold 为
+    Issue #2 的体积与频次启发式阈值（只产生 review_suggested 标记）。"""
     events = _load_events(session_dir / "capture.jsonl")
     tracking_domains = tracking_domains or set()
     requests = {event.get("requestId"): event for event in events if event.get("type") == "request"}
@@ -292,9 +354,14 @@ def analyze_capture(session_dir: Path, tracking_domains: set[str] | None = None)
             first = selected[0]
             request_body_values = []
             response_values = []
+            total_size = 0
+            max_size = 0
             for sample in selected:
                 request_body = sample["request"].get("postData")
                 response_body = sample["body"].get("body")
+                size = int(sample["body"].get("size") or 0)
+                total_size += size
+                max_size = max(max_size, size)
                 for target, values in ((request_body, request_body_values), (response_body, response_values)):
                     try:
                         parsed_value = json.loads(target) if target else None
@@ -326,6 +393,8 @@ def analyze_capture(session_dir: Path, tracking_domains: set[str] | None = None)
                 "description": None,
                 "notes": None,
                 "param_name_guessed": bool(item.parameter_names),
+                "total_response_bytes": total_size,
+                "max_response_bytes": max_size,
             })
     # ---- C-3: 噪音标记（不删除，保留人工复核权） --------------------------
     for endpoint in endpoints:
@@ -347,6 +416,8 @@ def analyze_capture(session_dir: Path, tracking_domains: set[str] | None = None)
             keep["sample_count"] = keep.get("sample_count", 1) + ep.get("sample_count", 1)
             keep["auth_required"] = keep.get("auth_required") or ep.get("auth_required")
             keep["noise"] = keep.get("noise") and ep.get("noise")  # 任一非噪音即保留
+            keep["total_response_bytes"] = keep.get("total_response_bytes", 0) + ep.get("total_response_bytes", 0)
+            keep["max_response_bytes"] = max(keep.get("max_response_bytes", 0), ep.get("max_response_bytes", 0))
             for k, v in (ep.get("query_params") or {}).items():
                 bucket = keep["query_params"].setdefault(k, [])
                 for val in v:
@@ -355,6 +426,18 @@ def analyze_capture(session_dir: Path, tracking_domains: set[str] | None = None)
     endpoints = list(merged.values())
     for i, ep in enumerate(endpoints, start=1):
         ep["endpoint_id"] = f"ep_{i:03d}"
+
+    # ---- Issue #2: 体积/频次启发式——只标记「待复核」，不删除、不当噪音 -----
+    for ep in endpoints:
+        hint = _heavy_response_suggestion(
+            ep.get("sample_count", 1),
+            ep.get("total_response_bytes", 0),
+            ep.get("max_response_bytes", 0),
+            response_bytes_threshold,
+            sample_count_threshold,
+        )
+        ep["review_suggested"] = bool(hint)
+        ep["review_reasons"] = hint["reasons"] if hint else []
 
     # ---- 站点档案（可选）：语义化 tool_name / 描述 / 站点专属噪音 ----------
     profile = _load_site_profile(base_host) if (base_host := _majority_host(endpoints)) else None
@@ -402,7 +485,10 @@ def analyze_capture(session_dir: Path, tracking_domains: set[str] | None = None)
         "auth_login": auth_login,
         "auth_metadata": {"auth_candidates": auth_candidates, "auth_schemes": auth_schemes},
         "stats": {"total": len(requests), "filtered": filtered, "unique": len(endpoints),
-                  "noise_marked": sum(1 for e in endpoints if e.get("noise"))},
+                  "noise_marked": sum(1 for e in endpoints if e.get("noise")),
+                  "review_suggested": sum(1 for e in endpoints if e.get("review_suggested")),
+                  "noise_response_bytes": sum(e.get("total_response_bytes", 0) for e in endpoints if e.get("noise")),
+                  "total_response_bytes": sum(e.get("total_response_bytes", 0) for e in endpoints)},
         "base_url": f"https://{base_host}" if base_host else None,
     }
     (session_dir / "analysis.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")

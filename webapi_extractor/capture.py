@@ -263,18 +263,25 @@ class CaptureSession:
             if encoded:
                 decoded = base64.b64decode(body)
                 size = len(decoded)
-                payload = None if size > self.response_limit else body
             else:
                 decoded = body.encode("utf-8")
                 size = len(body.encode("utf-8"))
-                payload = body[: self.response_limit] if size <= self.response_limit else body[: self.response_limit]
             meta = self.request_meta.get(request_id, {})
             if meta.get("resourceType") in {"Script", "Document"} and decoded:
                 scripts_dir = self.directory / "scripts"
                 scripts_dir.mkdir(parents=True, exist_ok=True)
                 script_path = scripts_dir / f"{request_id.replace(':', '_')}.js"
                 script_path.write_bytes(decoded[: 2 * 1024 * 1024])
-            await self.emit({"type": "response_body", "requestId": request_id, "body": payload, "body_truncated": size > self.response_limit, "size": size, "base64Encoded": encoded})
+            # Issue #2: 超限时**完全不写入 body**，只保留元数据（size / 截断标记）。
+            # 修复前是「截断后照写」，每轮仍向 capture.jsonl 灌入 response_limit 字节。
+            if size > self.response_limit:
+                await self.emit({"type": "response_body", "requestId": request_id, "body": None,
+                                 "body_truncated": True, "body_dropped": True,
+                                 "size": size, "base64Encoded": encoded})
+            else:
+                await self.emit({"type": "response_body", "requestId": request_id, "body": body,
+                                 "body_truncated": False, "body_dropped": False,
+                                 "size": size, "base64Encoded": encoded})
         except Exception as exc:
             await self.emit({"type": "response_body", "requestId": request_id, "body_unavailable_reason": type(exc).__name__})
         finally:

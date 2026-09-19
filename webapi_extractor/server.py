@@ -192,7 +192,11 @@ async def analyze_traffic(session_id: str) -> dict[str, Any]:
     metadata = store.read_metadata(session_id)
     if metadata is None:
         return {"success": False, "error": "session_not_found", "session_id": session_id}
-    result = analyze_capture(store.session_path(session_id))
+    result = analyze_capture(
+        store.session_path(session_id),
+        response_bytes_threshold=settings.noise_response_bytes,
+        sample_count_threshold=settings.noise_sample_count,
+    )
     crypto = detect_crypto(store.session_path(session_id), result)
     # Return a compact summary — the full result (schemas etc.) stays in analysis.json.
     host_counts: dict[str, int] = {}
