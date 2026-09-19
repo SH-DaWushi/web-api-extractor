@@ -58,22 +58,50 @@ def main():
     tool = sys.argv[1]
     args = load_args(sys.argv[2]) if len(sys.argv) > 2 else {}
     sid = CACHE.read_text().strip() if CACHE.exists() else None
+
+    def initialize(client):
+        resp, new_sid = post(client, {
+            "jsonrpc": "2.0", "id": 0, "method": "initialize",
+            "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                       "clientInfo": {"name": "driver", "version": "0"}},
+        }, None)
+        if not new_sid:
+            raise SystemExit("no session id returned:\n" + json.dumps(resp))
+        CACHE.write_text(new_sid)
+        post(client, {"jsonrpc": "2.0", "method": "notifications/initialized"}, new_sid)
+        return new_sid
+
     with httpx.Client(timeout=300) as client:
         if not sid:
-            resp, sid = post(client, {
-                "jsonrpc": "2.0", "id": 0, "method": "initialize",
-                "params": {"protocolVersion": "2025-03-26", "capabilities": {},
-                           "clientInfo": {"name": "driver", "version": "0"}},
-            }, None)
-            if not sid:
-                raise SystemExit("no session id returned:\n" + json.dumps(resp))
-            CACHE.write_text(sid)
-            post(client, {"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
+            sid = initialize(client)
         resp, _ = post(client, {
             "jsonrpc": "2.0", "id": 1, "method": "tools/call",
             "params": {"name": tool, "arguments": args},
         }, sid)
+        # E-2: cached session id goes stale after a server restart; the server
+        # then answers 404. Detect, re-initialize once, retry automatically.
+        if _is_stale_session(resp):
+            sys.stderr.write("缓存的 MCP 会话已失效（服务可能重启过），重新初始化并重试...\n")
+            try:
+                CACHE.unlink()
+            except OSError:
+                pass
+            sid = initialize(client)
+            resp, _ = post(client, {
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": tool, "arguments": args},
+            }, sid)
         print(json.dumps(resp, ensure_ascii=False, indent=2))
+
+
+def _is_stale_session(resp) -> bool:
+    """Heuristic: stale-session failures surface as protocol errors or 404 text."""
+    if not isinstance(resp, dict):
+        return False
+    err = resp.get("error")
+    if isinstance(err, dict) and (err.get("code") == -32001 or "404" in str(err.get("message", ""))):
+        return True
+    return "result" not in resp and "404" in str(resp)
 
 
 if __name__ == "__main__":

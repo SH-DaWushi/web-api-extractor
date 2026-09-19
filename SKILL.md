@@ -95,17 +95,31 @@ python mcp_call.py start_capture '{"url":"https://example.com/","auth_state_path
 
 ## 步骤 4 · 分析
 
-`analyze_traffic(session_id)` → 返回**精简摘要**（host 分布 + 接口清单 + 各 host 鉴权 scheme + crypto 标记 + `full_result_path`），完整 Schema 在该路径的 `analysis.json` 里。
-- 用 `update_endpoint(session_id, endpoint_id, description=...)` 补中文描述。
-- 剔除噪音：埋点/统计/心跳（`/stat/`、`/tracking/`、`heartbeat`、`*.qq.com`、clarity、beacon）、菜单/面包屑/配置、登录与改密接口。
+`analyze_traffic(session_id)` → 返回**精简摘要**（host 分布 + 接口清单 + 各 host 鉴权 scheme + crypto 标记 + `full_result_path`）。分析器已内置：
+- **噪音标记**（`noise: true`，不删除，生成时默认跳过）：埋点/心跳/面包屑/菜单配置/第三方统计域名；
+- **命名参数化**：单样本数字段也参数化（`/user/127733/info` → `/user/{user_id}/info`），同构自动合并；
+- **登录接口识别**：识别「账号+密码换 token」接口 → `auth_login`（含密码加密策略与 PEM 公钥提取），生成阶段转为 `login()`/`auth_status()` 专用工具；
+- **站点档案**：example 等已知站点自动应用语义化命名与中文描述（`site_profiles/`）。
 
-## 步骤 5 · 加密载荷
+用 `update_endpoint(session_id, endpoint_id, description=...)` 补充/修正描述。
 
-`crypto_findings == true` 时调用 `extract_crypto_logic(session_id)`，并向用户说明所选策略。
+## 步骤 5 · 加密与凭据核实（强制，禁止跳过）
+
+> **硬规则：抓包中的凭据字段值必然被脱敏为 `***`，明文与密文在此不可区分。禁止假设，必须核实。**
+
+核实手段（按可靠性排序）：
+1. **URL 查询参数** — `encrypt=2` / `version=2` / `sign` 之类（最可靠信号）；
+2. **形态元数据**（脱敏边车）— 保留了 `len`/`shape`：如 RSA-2048 密文恒为 344 字符 base64；
+3. **前端 JS** — `crypto.subtle` / `JSEncrypt` / `CryptoJS` / `sm2` 调用与 PEM 公钥块；
+4. **故意发一次明文请求看错误码** — 500（解密失败）vs 业务错误码（参数错）。
+
+`analyze_traffic` 的 `crypto_found` 为 true 时调用 `extract_crypto_logic(session_id)` 查看明细。
+
+> ⚠️ **不要假设「CDP 拿到的一定是明文」**。CDP 捕获的是网络层实际发出的字节，可能已被 JS 加密；加密后的值同样会被抓到（且按字段名脱敏后更难察觉）。按明文实现会撞 500。
 
 ## 步骤 6 · 生成（registry 项目）
 
-`generate_mcp_server(session_id, output_dir, endpoint_ids=[...])` → 生成**项目**而非孤立脚本：
+`generate_mcp_server(session_id, output_dir, endpoint_ids=[...])` → 生成**项目**：
 
 ```
 <output_dir>/
@@ -115,12 +129,17 @@ python mcp_call.py start_capture '{"url":"https://example.com/","auth_state_path
 └─ captures/                       # 各轮合并的 provenance
 ```
 
-生成器已全面增强（基础结构无需再手工精修）：
-- **多域名路由**：每个工具记住自己的 host；
-- **类型化参数**：query/path 参数样本 → 带类型与默认值的函数签名（如 `page: int = 1`）；
-- **鉴权按实测**：Basic → `Basic base64(token:口令)`（口令填 `.env` 的 `<前缀>_BASIC_PASSWORD_<HOST>`，来源是前端 JS 固定串，抓包 scripts/ 里搜 `btoa(`）；Bearer/Cookie 同理；
+生成器能力：
+- **多域名路由** + **类型化签名**（query/path 样本 → `page: int = 1`）；
+- **默认值门槛**：仅多轮采样稳定、短、纯 ASCII、无逗号且非身份/时间类的参数才有默认值（防隐私泄漏与过期默认值）；
+- **鉴权按实测**：Basic/Bearer/Cookie 分别生成；
 - **写操作护栏**：非 GET 工具需 `confirm=true`，写 audit.log；
+- **登录工具**（识别到 auth_login 时）：`login()` / `auth_status()`——凭据与 token **DPAPI 加密持久化**（`cred_cache.bin`/`token_cache.bin`，仅同一 Windows 用户可解密，已列 .gitignore），重启自动恢复，**401 自动重登录并重试一次**；密码按前端实测策略加密传输；
 - **用户态诊断**：`tool_catalog`（含 registry_version）/ `error_log_tail`。
+
+### Basic 口令验证（必做）
+
+抓包发现 `Authorization: Basic` 时，前端 JS 里的固定口令**可能是装饰性的，服务端并不校验**。生成前做对照实验：带该头发一次、不带头再发一次——两次都成功则口令留空即可，不要把「缺 Authorization 头」当成错误第一嫌疑（曾误导一轮排障）。
 
 ## 步骤 7 · 持续迭代（IT 管理态专属）
 
@@ -174,3 +193,6 @@ python mcp_call.py start_capture '{"url":"https://example.com/","auth_state_path
 | 端口 8422 被占 | 服务已在跑或冲突 | 复用已运行服务，或改 `run_http.py` 端口 |
 | 生成的工具 401 | Basic 口令没填 | scheme 已按实测生成；在 `.env` 填 `<前缀>_BASIC_PASSWORD_<HOST>`（抓包 scripts/ 搜 `btoa(` 找固定串）与 token |
 | merge/regenerate 被拒 `project_locked` | 项目被锁定 | 人工编辑 project.json 的 locked 字段解锁 |
+| 生成的工具 401 后未自动重登录 | 无登录配置或无凭据 | 确认 auth_login 已识别；调用一次 login() 或在 .env 配凭据（之后走加密缓存） |
+| 想清除已保存的凭据/token | — | 删除项目目录下 cred_cache.bin / token_cache.bin（均为加密文件） |
+| PowerShell 下 bootstrap 段错误 | 受限环境 | 用纯 Python 引导：`python bootstrap.py` |

@@ -149,7 +149,7 @@ class CaptureSession:
         self.last_activity = time.monotonic()
         request = event.get("request", {})
         body = request.get("postData")
-        redacted_body, token_paths = redact_payload(body)
+        redacted_body, token_paths, shape_meta = redact_payload(body)
         headers = redact_headers(request.get("headers", {}))
         request_id = event.get("requestId", "")
         self.request_targets[request_id] = cdp
@@ -160,6 +160,7 @@ class CaptureSession:
             "headers": headers, "postData": redacted_body,
             "resourceType": event.get("type"), "auth_candidate": is_auth_candidate(request.get("url", ""), body),
             "token_paths": token_paths,
+            "redaction_meta": shape_meta,
         })
         if event.get("hasUserGesture") and request.get("url", "").startswith("http"):
             self.endpoint_count += 1

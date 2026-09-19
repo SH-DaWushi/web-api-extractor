@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.mcp_session
+.venv/
+*.bak

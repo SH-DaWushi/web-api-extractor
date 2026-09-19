@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
+from .crypto_analyzer import detect_password_encryption
+
 
 VALUE_SHAPES = (
     re.compile(r"^\d+$"),                      # 123, 6463
@@ -19,6 +21,143 @@ VALUE_SHAPES = (
     # and whole literal path segments get wrongly collapsed into {id}.
     re.compile(r"^(?=.*\d)[A-Za-z0-9_-]{6,}$"),
 )
+
+
+# --------------------------------------------------------------------------- #
+# C-3: 内置噪音规则（标记 noise:true，不删除——保留人工复核权）
+# --------------------------------------------------------------------------- #
+NOISE_PATH_PATTERNS = (
+    r"/system/stat/", r"/system/traffic/", r"/tracking/", r"heartbeat",
+    r"/breadcrumb", r"/config/menu/", r"/config/banner", r"/visit-history/",
+    r"/analytics/", r"/telemetry/", r"/beacon", r"^(?:log|collect)[/-]",
+)
+NOISE_DOMAINS = {
+    "r.clarity.ms", "otheve.beacon.qq.com", "aegis.qq.com", "graph.qq.com",
+    "www.google-analytics.com", "analytics.google.com", "log.zhugeio.com",
+}
+
+
+def _is_noise(host: str, path: str) -> bool:
+    if host in NOISE_DOMAINS or host.endswith(".clarity.ms"):
+        return True
+    return any(re.search(p, path, re.I) for p in NOISE_PATH_PATTERNS)
+
+
+# --------------------------------------------------------------------------- #
+# B-1: 命名参数化（单样本也能参数化——SPA 每个资源通常只请求一次）
+# --------------------------------------------------------------------------- #
+PARAM_ALIAS = {"is_my": "article_id", "content_meta": "content_meta_id",
+               "read": "message_id", "id": "id", "page": "page"}
+
+
+def _is_id_segment(seg: str) -> bool:
+    """数字 ID、下划线/逗号分隔数字（item_merged.10_773）、<type>-<id>（achievement-12782）。"""
+    return bool(
+        re.fullmatch(r"\d+([_,]\d+)*", seg)
+        or re.fullmatch(r"item_merged\.\d+(_\d+)*", seg)
+        or re.fullmatch(r"[a-z_]+-\d+([_,]\d+)*", seg)
+    )
+
+
+def parameterize(path: str) -> tuple[str, list[str]]:
+    """把路径中的 ID 段替换为按前段命名的参数，返回 (新路径, 参数名列表)。"""
+    segs = path.split("/")
+    out: list[str] = []
+    names: list[str] = []
+    for i, seg in enumerate(segs):
+        if not (_is_id_segment(seg) or re.fullmatch(r"\{[^}]+\}", seg)):
+            out.append(seg)
+            continue
+        if re.fullmatch(r"\{[^}]+\}", seg):
+            out.append(seg)  # 已参数化的占位符保持原样
+            continue
+        prev = segs[i - 1] if i > 0 else ""
+        base = re.sub(r"[^a-z0-9]+", "_", prev.lower()).strip("_")
+        name = PARAM_ALIAS.get(base) or (base + "_id" if base else "id")
+        if name in names:
+            name = f"{name}_{names.count(name) + 1}"
+        names.append(name)
+        out.append(f"{{{name}}}")
+    return "/".join(out), names
+
+
+# --------------------------------------------------------------------------- #
+# C-1: 账号密码登录接口识别（生成 login/auth_status 专用工具）
+# --------------------------------------------------------------------------- #
+LOGIN_HINTS = ("login", "signin", "sign_in", "authorize", "auth/token")
+ACCOUNT_KEYS = ("account", "username", "user_name", "phone", "mobile", "email", "user")
+PASSWORD_KEYS = ("password", "passwd", "pwd", "secret")
+TOKEN_KEYS = ("token", "access_token", "accesstoken", "jwt")
+
+
+def _match_key(props: dict, candidates: tuple[str, ...]) -> str | None:
+    for key in props:
+        if key.lower() in candidates:
+            return key
+    for key in props:
+        if any(c in key.lower() for c in candidates):
+            return key
+    return None
+
+
+def _find_token_path(schema: Any, path: tuple[str, ...] = ()) -> list[str] | None:
+    if not isinstance(schema, dict):
+        return None
+    for key, sub in (schema.get("properties") or {}).items():
+        if key.lower() in TOKEN_KEYS and (sub or {}).get("type") == "string":
+            return list(path) + [key]
+    for key, sub in (schema.get("properties") or {}).items():
+        found = _find_token_path(sub, path + (key,))
+        if found:
+            return found
+    return None
+
+
+def detect_auth_login(endpoints: list[dict[str, Any]], session_dir: Path | None = None) -> dict[str, Any] | None:
+    """找到「账号+密码换取 token」的接口；找不到强信号则返回 None。"""
+    for ep in endpoints:
+        props = ((ep.get("request_schema") or {}).get("properties")) or {}
+        if not props:
+            continue
+        path_low = ep["path"].lower()
+        if not any(h in path_low for h in LOGIN_HINTS):
+            continue
+        account_field = _match_key(props, ACCOUNT_KEYS)
+        password_field = _match_key(props, PASSWORD_KEYS)
+        if not (account_field and password_field):
+            continue
+        token_path = _find_token_path(ep.get("response_schema")) or ["data", "token"]
+        verify = next(
+            (c for c in endpoints
+             if c["method"] == "GET" and c.get("auth_required") and "/my" in c["path"].lower()),
+            None,
+        )
+        login = {
+            "host": ep["host"],
+            "method": ep.get("method", "POST"),
+            "path": ep["path"],
+            "query_params": {k: (v or [""])[0] for k, v in (ep.get("query_params") or {}).items()},
+            "account_field": account_field,
+            "password_field": password_field,
+            "token_path": token_path,
+            "verify": ({"host": verify["host"], "path": verify["path"]} if verify else None),
+        }
+        enc = detect_password_encryption(session_dir, login)
+        if enc:
+            login["password_encryption"] = enc
+        return login
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# 站点档案（可选加载：语义化命名与站点专属噪音规则外置在 site_profiles/）
+# --------------------------------------------------------------------------- #
+def _load_site_profile(host: str) -> dict[str, Any] | None:
+    try:
+        from .site_profiles import get_profile
+        return get_profile(host)
+    except Exception:
+        return None
 
 
 def _looks_like_parameter(value: str) -> bool:
@@ -168,6 +307,52 @@ def analyze_capture(session_dir: Path, tracking_domains: set[str] | None = None)
                 "notes": None,
                 "param_name_guessed": bool(item.parameter_names),
             })
+    # ---- C-3: 噪音标记（不删除，保留人工复核权） --------------------------
+    for endpoint in endpoints:
+        endpoint["noise"] = _is_noise(endpoint["host"], endpoint["path"])
+
+    # ---- B-1: 命名参数化二遍处理 + 同构合并 -------------------------------
+    merged: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for ep in endpoints:
+        new_path, param_names = parameterize(ep["path"])
+        ep["path_params"] = param_names or [seg.strip("{}") for seg in new_path.split("/") if seg.startswith("{")]
+        key = (ep["method"], ep["host"], new_path)
+        if key not in merged:
+            ep = dict(ep)
+            ep["path"] = new_path
+            ep["query_params"] = dict(ep.get("query_params") or {})
+            merged[key] = ep
+        else:
+            keep = merged[key]
+            keep["sample_count"] = keep.get("sample_count", 1) + ep.get("sample_count", 1)
+            keep["auth_required"] = keep.get("auth_required") or ep.get("auth_required")
+            keep["noise"] = keep.get("noise") and ep.get("noise")  # 任一非噪音即保留
+            for k, v in (ep.get("query_params") or {}).items():
+                bucket = keep["query_params"].setdefault(k, [])
+                for val in v:
+                    if val not in bucket:
+                        bucket.append(val)
+    endpoints = list(merged.values())
+    for i, ep in enumerate(endpoints, start=1):
+        ep["endpoint_id"] = f"ep_{i:03d}"
+
+    # ---- 站点档案（可选）：语义化 tool_name / 描述 / 站点专属噪音 ----------
+    profile = _load_site_profile(base_host) if (base_host := _majority_host(endpoints)) else None
+    if profile:
+        for ep in endpoints:
+            info = profile["describe"](ep["host"], ep["path"])
+            if info:
+                ep["tool_name"], ep["description"] = info
+            if any(re.search(p, ep["path"]) for p in profile.get("drop_path_patterns", [])) \
+                    or ep["host"] in profile.get("drop_hosts", []):
+                ep["noise"] = True
+
+    # ---- C-1: 登录接口识别（移出普通工具列表，转 auth_login） --------------
+    auth_login = detect_auth_login(endpoints, session_dir)
+    if auth_login:
+        endpoints = [e for e in endpoints
+                     if not (e["host"] == auth_login["host"] and e["path"] == auth_login["path"])]
+
     host_counts = defaultdict(int)
     for endpoint in endpoints:
         host_counts[endpoint["host"]] += 1
@@ -194,9 +379,18 @@ def analyze_capture(session_dir: Path, tracking_domains: set[str] | None = None)
             auth_schemes[host] = {"scheme": scheme or auth_schemes.get(host, {}).get("scheme"), "cookie_names": cookie_names or auth_schemes.get(host, {}).get("cookie_names", [])}
     result = {
         "endpoints": endpoints,
+        "auth_login": auth_login,
         "auth_metadata": {"auth_candidates": auth_candidates, "auth_schemes": auth_schemes},
-        "stats": {"total": len(requests), "filtered": filtered, "unique": len(endpoints)},
+        "stats": {"total": len(requests), "filtered": filtered, "unique": len(endpoints),
+                  "noise_marked": sum(1 for e in endpoints if e.get("noise"))},
         "base_url": f"https://{base_host}" if base_host else None,
     }
     (session_dir / "analysis.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return result
+
+
+def _majority_host(endpoints: list[dict[str, Any]]) -> str | None:
+    counts: dict[str, int] = defaultdict(int)
+    for ep in endpoints:
+        counts[ep.get("host", "")] += 1
+    return max(counts, key=counts.get) if counts else None

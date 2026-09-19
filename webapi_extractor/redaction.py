@@ -6,6 +6,8 @@ import json
 import re
 from typing import Any
 
+from .crypto_analyzer import value_shape
+
 
 SECRET_FIELD_NAMES = {"password", "passwd", "pwd", "secret", "captcha_code"}
 TOKEN_FIELD_PATTERN = re.compile(r"(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key|secret)", re.I)
@@ -24,29 +26,42 @@ def is_auth_candidate(url: str, post_data: str | None = None) -> bool:
     return isinstance(value, dict) and any(str(key).lower() in SECRET_FIELD_NAMES for key in value)
 
 
-def _redact_json(value: Any, path: str = "$") -> tuple[Any, list[str]]:
+def _redact_json(value: Any, path: str = "$") -> tuple[Any, list[str], dict[str, dict]]:
+    """Redact secrets while preserving SHAPE METADATA (B-3).
+
+    Returns (redacted_value, token_paths, shape_meta). The value is still fully
+    masked ("***"), but shape_meta records ``{"len": N, "shape": "base64|hex|plain"}``
+    per redacted path — downstream crypto detection can tell a 344-char base64
+    RSA ciphertext from a short plaintext password without seeing either.
+    """
     paths: list[str] = []
+    shape_meta: dict[str, dict] = {}
     if isinstance(value, dict):
         redacted = {}
         for key, item in value.items():
             child_path = f"{path}.{key}"
             if str(key).lower() in SECRET_FIELD_NAMES:
                 redacted[key] = "***"
+                if isinstance(item, str):
+                    shape_meta[child_path] = {"len": len(item), "shape": value_shape(item)}
             elif TOKEN_FIELD_PATTERN.search(str(key)) and isinstance(item, str) and len(item) >= 16:
                 redacted[key] = "***"
                 paths.append(child_path)
+                shape_meta[child_path] = {"len": len(item), "shape": value_shape(item)}
             else:
-                redacted[key], child_paths = _redact_json(item, child_path)
+                redacted[key], child_paths, child_meta = _redact_json(item, child_path)
                 paths.extend(child_paths)
-        return redacted, paths
+                shape_meta.update(child_meta)
+        return redacted, paths, shape_meta
     if isinstance(value, list):
         redacted_items = []
         for index, item in enumerate(value):
-            redacted_item, child_paths = _redact_json(item, f"{path}[{index}]")
+            redacted_item, child_paths, child_meta = _redact_json(item, f"{path}[{index}]")
             redacted_items.append(redacted_item)
             paths.extend(child_paths)
-        return redacted_items, paths
-    return value, paths
+            shape_meta.update(child_meta)
+        return redacted_items, paths, shape_meta
+    return value, paths, shape_meta
 
 
 def redact_headers(headers: dict[str, str]) -> dict[str, str]:
@@ -64,12 +79,13 @@ def redact_headers(headers: dict[str, str]) -> dict[str, str]:
     return result
 
 
-def redact_payload(payload: str | None) -> tuple[str | None, list[str]]:
+def redact_payload(payload: str | None) -> tuple[str | None, list[str], dict[str, dict]]:
+    """Returns (redacted_json, token_paths, shape_meta). shape_meta 见 _redact_json。"""
     if payload is None:
-        return None, []
+        return None, [], {}
     try:
         parsed = json.loads(payload)
     except json.JSONDecodeError:
-        return payload, []
-    redacted, token_paths = _redact_json(parsed)
-    return json.dumps(redacted, ensure_ascii=False, separators=(",", ":")), token_paths
+        return payload, [], {}
+    redacted, token_paths, shape_meta = _redact_json(parsed)
+    return json.dumps(redacted, ensure_ascii=False, separators=(",", ":")), token_paths, shape_meta

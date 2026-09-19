@@ -63,21 +63,32 @@ def init_project(project_dir: str | Path, site_name: str) -> dict[str, Any]:
                "created_at": _now(), "tool": "webapi_extractor"}
     (directory / "project.json").write_text(json.dumps(project, ensure_ascii=False, indent=2), encoding="utf-8")
     registry = {"site_name": site_name, "registry_version": 0, "updated_at": _now(),
-                "hosts": {}, "endpoints": []}
+                "hosts": {}, "endpoints": [], "auth_login": None}
     save_registry(directory, registry)
     return project
+
+
+def set_auth_login(project_dir: str | Path, auth_login: dict[str, Any] | None) -> None:
+    """记录账号密码登录接口定义（curate 阶段识别，生成 login/auth_status 工具用）。"""
+    registry = load_registry(project_dir)
+    registry["auth_login"] = auth_login
+    save_registry(project_dir, registry)
 
 
 # --------------------------------------------------------------------------- #
 # session analysis → registry entries
 # --------------------------------------------------------------------------- #
 def _tool_name(endpoint: dict[str, Any], used: set[str]) -> str:
+    # 上游（curate 阶段）可显式指定 tool_name；语义化命名优先于从路径机械推导。
+    explicit = re.sub(r"[^0-9a-zA-Z_]+", "_", str(endpoint.get("tool_name") or "")).strip("_")
+    if explicit[:1].isdigit():
+        explicit = "_" + explicit
     parts = [p for p in endpoint.get("path", "").split("/") if p and not p.startswith("{")]
     resource = "_".join(re.sub(r"[^a-zA-Z0-9]+", "_", p).strip("_") for p in parts) or "endpoint"
     verb = {"GET": "get", "POST": "create", "PUT": "update", "PATCH": "update", "DELETE": "delete"}.get(
         endpoint.get("method", "GET"), "call")
-    name = f"{verb}_{resource}"
-    if "{" in endpoint.get("path", ""):
+    name = explicit or f"{verb}_{resource}"
+    if not explicit and "{" in endpoint.get("path", ""):
         name += "_by_id"
     candidate, index = name, 2
     while candidate in used:
@@ -87,11 +98,16 @@ def _tool_name(endpoint: dict[str, Any], used: set[str]) -> str:
     return candidate
 
 
-def session_to_registry_entries(analysis: dict[str, Any], session_id: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Convert an analyze_capture() result into registry endpoint entries + host auth info."""
+def session_to_registry_entries(analysis: dict[str, Any], session_id: str, include_noise: bool = False) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Convert an analyze_capture() result into registry endpoint entries + host auth info.
+
+    include_noise=False（默认）跳过标记为噪音的端点；显式传 True 保留全部。
+    """
     used: set[str] = set()
     entries: list[dict[str, Any]] = []
     for endpoint in analysis.get("endpoints", []):
+        if endpoint.get("noise") and not include_noise:
+            continue
         path = endpoint.get("path", "")
         path_params = [seg.strip("{}") for seg in path.split("/") if seg.startswith("{")]
         entries.append({
@@ -107,6 +123,7 @@ def session_to_registry_entries(analysis: dict[str, Any], session_id: str) -> tu
             "auth_required": bool(endpoint.get("auth_required")),
             "description": endpoint.get("description"),
             "notes": endpoint.get("notes"),
+            "noise": bool(endpoint.get("noise")),
             "status": "active",
             "unseen_since": None,
             "source_sessions": [session_id],
