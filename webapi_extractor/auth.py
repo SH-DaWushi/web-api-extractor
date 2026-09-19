@@ -16,7 +16,6 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from .control_bar import LOGIN_CONTROL_BAR_JS
 from .domain import same_site
 from .redaction import is_auth_candidate
 
@@ -166,14 +165,10 @@ class LoginManager:
             async with async_playwright() as playwright:
                 record.browser = await playwright.chromium.launch(headless=False)
                 record.context = await record.browser.new_context()
-                # Decorative 4th path: an in-page bar for well-behaved sites.
-                # NOT relied upon — it breaks under CSP / iframes / SSO popups.
-                try:
-                    await record.context.add_init_script(LOGIN_CONTROL_BAR_JS)
-                    page = await record.context.new_page()
-                    await page.expose_binding("__mcp_control", lambda source, action: self._control(record, action))
-                except Exception:
-                    page = await record.context.new_page()
+                # Issue #14: 不再注入页内控制条——认证完成完全依赖三层外置信号
+                # （Cookie 证据 / 系统原生对话框 / confirm_login 工具），
+                # 这三层本就不依赖页内控制条，去掉后同时消除了对目标页面的脚本注入。
+                page = await record.context.new_page()
                 await page.goto(record.url, wait_until="domcontentloaded", timeout=30000)
 
                 # Layer 2 (backup): native OS dialog, fully outside the target page —
@@ -284,10 +279,9 @@ class LoginManager:
         record.completed.set()
         return {"success": True, "login_session_id": session_id, "status": "completed"}
 
-    def _control(self, record: LoginSession, action: str) -> None:
-        if action == "login_complete":
-            record.status = "completed"
-            record.completed.set()
+    # Issue #14: _control() 已移除——页内控制条的 login_complete 通道不再存在。
+    # 认证完成由三层外置信号决定：_login_evidence()（层1）、_spawn_native_confirm()
+    # （层2）、confirm()（层3，由 confirm_login 工具触发）。
 
     def status(self, session_id: str) -> dict[str, Any]:
         record = self.sessions.get(session_id)

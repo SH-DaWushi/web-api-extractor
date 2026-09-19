@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .control_bar import CONTROL_BAR_JS, LOGIN_CONTROL_BAR_JS
 from .domain import same_site
 from .redaction import is_auth_candidate, redact_headers, redact_payload
 from .storage import SessionStore, utc_now
@@ -91,8 +90,12 @@ class CaptureSession:
         self.playwright = await async_playwright().start()
         state = self.auth_state_path if self.auth_state_path and Path(self.auth_state_path).exists() else None
         self.browser = await self.playwright.chromium.launch(headless=False)
+        # Issue #14: 不再向目标页面注入任何脚本（原页内控制条已移除）。
+        # 减少侵入、避免被目标站检测，也让 CSP/iframe 场景不再有失效面。
         self.context = await self.browser.new_context(storage_state=state)
-        await self.context.add_init_script(CONTROL_BAR_JS if self.auth_ready else LOGIN_CONTROL_BAR_JS)
+        # Issue #13: 用户直接关闭浏览器时自动收尾。
+        # 此前无此监听——会话会卡在 capturing、元数据不落盘、list_sessions 看不到它。
+        self.browser.on("disconnected", lambda *_: asyncio.create_task(self._on_browser_closed()))
         self.context.on("page", lambda page: asyncio.create_task(self.attach_page(page)))
         page = await self.context.new_page()
         await self.attach_page(page)
@@ -105,14 +108,46 @@ class CaptureSession:
             self.pause_reason = None
 
     async def _enter_capturing(self) -> None:
-        """Finish login: start recording and switch the in-page bar to capture mode."""
+        """登录完成：开始记录。"""
         self.mark_auth_ready()
         self.last_activity = time.monotonic()
-        for page in self.pages:
+
+    async def _on_browser_closed(self) -> None:
+        """Issue #13: 用户关闭浏览器 → 自动收尾，保留已抓数据。
+
+        此前无此处理：会话卡在 capturing、元数据不落盘、list_sessions 看不到它，
+        用户会以为整轮采集白干（实际 capture.jsonl 是逐条落盘、数据完整的）。
+        """
+        if self.status in {"stopped", "failed", "stopping"}:
+            return
+        prev = self.status
+        try:
+            # 复用 stop() 的收尾流程；stop() 内部对 browser.close() 是幂等的。
+            await self.stop("browser_closed")
+        except Exception as exc:  # 收尾失败也要保证状态与元数据可用
+            self.status = "stopped"
+            self.stop_reason = "browser_closed"
+            self.pause_reason = f"auto_stop_error:{type(exc).__name__}"
             try:
-                await page.evaluate("() => window.__mcp_set_mode && window.__mcp_set_mode('capture')")
-            except Exception:
+                self.store.write_metadata(self.session_id, self.metadata())
+            except OSError:
                 pass
+        # 记录一条可读提示，随 list_sessions 一并返回
+        try:
+            meta = self.store.read_metadata(self.session_id) or {}
+            size = self.capture_path.stat().st_size if self.capture_path.exists() else 0
+            meta["captured_bytes"] = size
+            meta["recovered"] = size > 0
+            meta["recovered_hint"] = (
+                f"检测到浏览器已关闭（原状态 {prev}），已自动收尾。"
+                f"已落盘 {size / 1024:.1f} KB 数据，可直接对该会话调用 analyze_traffic。"
+            )
+            meta.setdefault("status_history", []).append(
+                {"status": "stopped", "ts": utc_now(), "reason": "browser_closed"}
+            )
+            self.store.write_metadata(self.session_id, meta)
+        except OSError:
+            pass
 
     async def _login_monitor(self) -> None:
         """Best-effort auto-detect using the same evidence standard as auth.py:
@@ -151,7 +186,7 @@ class CaptureSession:
         if page in self.pages:
             return
         self.pages.add(page)
-        await page.expose_binding("__mcp_control", lambda source, action: self.control(action))
+        # Issue #14: 不再暴露 __mcp_control 绑定（页内控制条已移除）
         cdp = await self.context.new_cdp_session(page)
         self.cdp_sessions[page] = cdp
         await cdp.send("Network.enable")
@@ -316,23 +351,15 @@ class CaptureSession:
             if self.status == "capturing" and time.monotonic() - self.last_activity >= self.idle_timeout:
                 await self.pause("idle_timeout")
 
-    async def control(self, action: str) -> None:
-        if action == "login_complete":
-            if self.status == "authenticating":
-                await self._enter_capturing()
-        elif action == "pause":
-            await self.pause("control_bar")
-        elif action == "resume":
-            await self.resume()
-        elif action == "stop":
-            await self.stop("control_bar")
+    # Issue #14: 页内控制条已移除，control() / _broadcast_state() 一并删除。
+    # 认证完成改由三层外置信号判定（Cookie 证据 / 系统原生对话框 / confirm_login 工具），
+    # 采集结束由「用户关闭浏览器」自动触发（见 _on_browser_closed）。
 
     async def pause(self, reason: str) -> None:
         if self.status != "capturing":
             return
         self.status = "paused"
         self.pause_reason = reason
-        await self._broadcast_state()
 
     async def resume(self) -> None:
         if self.status != "paused":
@@ -340,14 +367,6 @@ class CaptureSession:
         self.status = "capturing"
         self.pause_reason = None
         self.last_activity = time.monotonic()
-        await self._broadcast_state()
-
-    async def _broadcast_state(self) -> None:
-        for page in self.pages:
-            try:
-                await page.evaluate("state => window.__mcp_set_state && window.__mcp_set_state(state)", self.status)
-            except Exception:
-                pass
 
     async def stop(self, reason: str = "agent_requested") -> dict[str, Any]:
         async with self.stop_lock:
