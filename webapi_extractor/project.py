@@ -17,6 +17,7 @@ Role separation:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -78,6 +79,31 @@ def set_auth_login(project_dir: str | Path, auth_login: dict[str, Any] | None) -
 # --------------------------------------------------------------------------- #
 # session analysis → registry entries
 # --------------------------------------------------------------------------- #
+# MCP 工具名上限 128 字符（SEP-986）。超限时 fastmcp 只告警放行，但严格校验的
+# 客户端可能拒绝注册，故在命名出口统一压到限内。
+MCP_TOOL_NAME_MAX = 128
+# 压缩后缀保留的内容哈希长度：够短以免吃掉可读前缀，够长以免同前缀碰撞。
+_NAME_HASH_LEN = 8
+
+
+def _shorten_tool_name(name: str, limit: int = MCP_TOOL_NAME_MAX) -> str:
+    """把超长工具名压到 limit 以内：可读前缀 + 确定性哈希后缀。
+
+    哈希用 sha1 而非内置 ``hash()``——后者按进程随机化，会让同一端点在每轮
+    生成时拿到不同名字，registry 会反复 diff 出噪音。
+    """
+    if len(name) <= limit:
+        return name
+    suffix = "_" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:_NAME_HASH_LEN]
+    head = name[: limit - len(suffix)]
+    # 尽量在词边界截断，避免切出半截标识符（削得太狠则退回硬截断结果）。
+    if "_" in head:
+        trimmed = head.rsplit("_", 1)[0]
+        if len(trimmed) >= limit // 2:
+            head = trimmed
+    return head + suffix
+
+
 def _tool_name(endpoint: dict[str, Any], used: set[str]) -> str:
     # 上游（curate 阶段）可显式指定 tool_name；语义化命名优先于从路径机械推导。
     explicit = re.sub(r"[^0-9a-zA-Z_]+", "_", str(endpoint.get("tool_name") or "")).strip("_")
@@ -90,9 +116,12 @@ def _tool_name(endpoint: dict[str, Any], used: set[str]) -> str:
     name = explicit or f"{verb}_{resource}"
     if not explicit and "{" in endpoint.get("path", ""):
         name += "_by_id"
-    candidate, index = name, 2
+    # 超长名字先压到 MCP 上限内（#18）。碰撞序号同样要过闸门——加序号后可能
+    # 又超限，而哈希随序号变化，压缩后仍保持唯一。
+    candidate = _shorten_tool_name(name)
+    index = 2
     while candidate in used:
-        candidate = f"{name}_{index}"
+        candidate = _shorten_tool_name(f"{name}_{index}")
         index += 1
     used.add(candidate)
     return candidate
