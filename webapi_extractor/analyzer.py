@@ -46,8 +46,24 @@ def _is_noise(host: str, path: str) -> bool:
 # --------------------------------------------------------------------------- #
 # B-1: 命名参数化（单样本也能参数化——SPA 每个资源通常只请求一次）
 # --------------------------------------------------------------------------- #
-PARAM_ALIAS = {"is_my": "article_id", "content_meta": "content_meta_id",
-               "read": "message_id", "id": "id", "page": "page"}
+# 通用层只保留真·通用映射；站点专属语义（article_id / message_id 等）必须外置到
+# site_profiles/<site>.py 的 param_alias，由 get_param_alias() 按 host 覆盖/扩展（Issue #8）。
+PARAM_ALIAS = {"id": "id", "page": "page"}
+PARAM_ALIAS_TEMPLATE = "{name}_id"
+
+
+def get_param_alias(host: str | None = None) -> dict[str, str]:
+    """通用别名 + 站点档案别名（站点优先）。无档案时退化为纯通用映射。"""
+    if not host:
+        return dict(PARAM_ALIAS)
+    profile = _load_site_profile(host)
+    if not profile:
+        return dict(PARAM_ALIAS)
+    try:
+        from .site_profiles import merge_param_alias
+        return merge_param_alias(PARAM_ALIAS, profile)
+    except Exception:
+        return dict(PARAM_ALIAS)
 
 
 def _is_id_segment(seg: str) -> bool:
@@ -59,8 +75,12 @@ def _is_id_segment(seg: str) -> bool:
     )
 
 
-def parameterize(path: str) -> tuple[str, list[str]]:
-    """把路径中的 ID 段替换为按前段命名的参数，返回 (新路径, 参数名列表)。"""
+def parameterize(path: str, host: str | None = None) -> tuple[str, list[str]]:
+    """把路径中的 ID 段替换为按前段命名的参数，返回 (新路径, 参数名列表)。
+
+    host 用于加载站点档案的专属别名（Issue #8）；不传则只用通用映射。
+    """
+    alias = get_param_alias(host)
     segs = path.split("/")
     out: list[str] = []
     names: list[str] = []
@@ -73,7 +93,7 @@ def parameterize(path: str) -> tuple[str, list[str]]:
             continue
         prev = segs[i - 1] if i > 0 else ""
         base = re.sub(r"[^a-z0-9]+", "_", prev.lower()).strip("_")
-        name = PARAM_ALIAS.get(base) or (base + "_id" if base else "id")
+        name = alias.get(base) or (PARAM_ALIAS_TEMPLATE.format(name=base) if base else "id")
         if name in names:
             name = f"{name}_{names.count(name) + 1}"
         names.append(name)
@@ -314,7 +334,7 @@ def analyze_capture(session_dir: Path, tracking_domains: set[str] | None = None)
     # ---- B-1: 命名参数化二遍处理 + 同构合并 -------------------------------
     merged: dict[tuple[str, str, str], dict[str, Any]] = {}
     for ep in endpoints:
-        new_path, param_names = parameterize(ep["path"])
+        new_path, param_names = parameterize(ep["path"], ep["host"])
         ep["path_params"] = param_names or [seg.strip("{}") for seg in new_path.split("/") if seg.startswith("{")]
         key = (ep["method"], ep["host"], new_path)
         if key not in merged:
