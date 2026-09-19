@@ -102,11 +102,17 @@ def session_to_registry_entries(analysis: dict[str, Any], session_id: str, inclu
     """Convert an analyze_capture() result into registry endpoint entries + host auth info.
 
     include_noise=False（默认）跳过标记为噪音的端点；显式传 True 保留全部。
+
+    Issue #15：默认同时跳过 `not_independently_callable` 的端点
+    （OData 绑定函数依赖父请求上下文参数，独立成工具必失败）。
+    传 include_noise=True 可保留（用于人工复核）。
     """
     used: set[str] = set()
     entries: list[dict[str, Any]] = []
     for endpoint in analysis.get("endpoints", []):
         if endpoint.get("noise") and not include_noise:
+            continue
+        if endpoint.get("not_independently_callable") and not include_noise:
             continue
         path = endpoint.get("path", "")
         path_params = [seg.strip("{}") for seg in path.split("/") if seg.startswith("{")]
@@ -124,6 +130,11 @@ def session_to_registry_entries(analysis: dict[str, Any], session_id: str, inclu
             "description": endpoint.get("description"),
             "notes": endpoint.get("notes"),
             "noise": bool(endpoint.get("noise")),
+            # Issue #15: 透传可独立生成性标记，供生成阶段注入默认分页上限
+            "not_independently_callable": bool(endpoint.get("not_independently_callable")),
+            "not_callable_reason": endpoint.get("not_callable_reason"),
+            "pagination_suggested": endpoint.get("pagination_suggested"),
+            "required_query_param": endpoint.get("required_query_param"),
             "status": "active",
             "unseen_since": None,
             "source_sessions": [session_id],

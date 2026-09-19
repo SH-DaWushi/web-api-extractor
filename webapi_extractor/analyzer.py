@@ -156,6 +156,131 @@ def _request_needs_auth(request: dict[str, Any]) -> bool:
     return _has_credential_cookie(headers)
 
 
+# --------------------------------------------------------------------------- #
+# Issue #15: 端点可独立生成性判定
+#
+# 实测两类端点不适合直接生成工具（修复前被 401 掩盖，鉴权修好后才暴露）：
+#
+#   1) OData 复合函数调用 —— 路径形如
+#        /<entity>(<key>)/<Namespace>.<Function>
+#      语义依赖父请求上下文里的必需参数（如 Target=@tid），独立调用必失败。
+#
+#   2) 从 $batch 还原出的集合端点，若原 query 无分页参数 —— 独立调用即拉全表。
+#      实测同一端点：无分页上限 >90s 超时；加 $top=50 用 23.3s；
+#      加 $top=10 用 3.1s。
+# --------------------------------------------------------------------------- #
+# OData 命名空间形式的函数段：以大写字母开头的点分标识符，
+# 且含 Microsoft.Dynamics.CRM / OData 常见命名空间前缀。
+_ODATA_FUNCTION_RE = re.compile(
+    r"/(?:[A-Za-z_][A-Za-z0-9_]*\.)+[A-Za-z_][A-Za-z0-9_]*\s*$"
+)
+_ODATA_FUNCTION_NAMESPACES = ("Microsoft.Dynamics.CRM", "Microsoft.OData", "System.")
+
+
+def is_odata_bound_function(path: str) -> bool:
+    """路径是否为 OData 绑定函数调用（不适合独立生成工具）。
+
+    >>> is_odata_bound_function("/api/data/v9.0/systemusers(abc)/Microsoft.Dynamics.CRM.RetrievePrincipalAccess")
+    True
+    >>> is_odata_bound_function("/api/data/v9.0/annotations")
+    False
+    """
+    if not path:
+        return False
+    # 形态一：显式 OData 命名空间前缀
+    if any(ns in path for ns in _ODATA_FUNCTION_NAMESPACES):
+        return True
+    # 形态二：末段是点分标识符（Namespace.Function），且不含扩展名特征
+    tail = path.split("?")[0].rstrip("/").rsplit("/", 1)[-1]
+    if "." not in tail:
+        return False
+    # 排除静态资源（含已知扩展名）
+    if re.search(r"\.(json|html|htm|js|css|xml|aspx|axd|svc|asmx)$", tail, re.I):
+        return False
+    return bool(_ODATA_FUNCTION_RE.search(path.split("?")[0]))
+
+
+def has_pagination(query_params: dict[str, Any] | None) -> bool:
+    """query 里是否已有分页/限量参数。"""
+    if not query_params:
+        return False
+    keys = {str(k).lower() for k in query_params}
+    return bool(keys & {"$top", "$skip", "fetchxml", "page", "pagesize", "count", "limit"})
+
+
+_SINGLE_RECORD_RE = re.compile(r"\([^)]*\)\s*$")
+
+
+def is_single_record_path(path: str) -> bool:
+    """路径是否指向单条记录（形如 /entities(<key>)），取单条无需分页。
+
+    >>> is_single_record_path("/api/data/v9.0/cr_sampleitems(00000000-...)")
+    True
+    >>> is_single_record_path("/api/data/v9.0/annotations")
+    False
+    """
+    if not path:
+        return False
+    return bool(_SINGLE_RECORD_RE.search(path.split("?")[0].rstrip("/")))
+
+
+# 这些参数是「查询的全部内容」而非可选修饰——不传就会退化成危险的默认查询。
+# 例如 D365 的 fetchXml：不传等价于「拉全表」，实测 >90s 超时。
+_QUERY_DEFINING_PARAMS = ("fetchxml", "query", "sql", "odataquery", "filter")
+
+
+def query_defining_param(query_params: dict[str, Any] | None) -> str | None:
+    """返回决定查询内容的必填参数名（若有）。
+
+    这类参数在生成时必须**保持必填**，不能因默认值门槛被降级为 None——
+    否则调用方省略它就会触发无界查询。
+    """
+    if not query_params:
+        return None
+    for key in query_params:
+        if str(key).lower() in _QUERY_DEFINING_PARAMS:
+            return str(key)
+    return None
+
+
+def suggest_pagination(query_params: dict[str, Any] | None,
+                       from_batch: bool,
+                       path: str = "") -> dict[str, Any] | None:
+    """集合端点若无任何分页约束，建议注入默认上限。
+
+    注意：若端点带 fetchXml 这类「查询即内容」的参数，说明**分页约束在参数里**
+    （如 <fetch count="10" page="1">），此时不应再注入 $top，而应保证该参数必填。
+    单条记录查询（/entities(key)）本就只取一条，不适用。
+    返回 None 表示无需建议。
+    """
+    if has_pagination(query_params) or is_single_record_path(path):
+        return None
+    if not from_batch:
+        return None
+    return {
+        "reason": "batch_derived_without_pagination",
+        "suggest": "在生成工具时注入默认分页上限（如 $top=50 或 fetch count）",
+        "evidence": "实测同一端点：无上限 >90s 超时；$top=50 用 23.3s；$top=10 用 3.1s",
+    }
+
+
+def require_query_param_suggestion(query_params: dict[str, Any] | None) -> dict[str, Any] | None:
+    """端点是否依赖「查询即内容」的参数（该参数必须保持必填）。
+
+    实测：`/api/data/v9.0/annotations` 的分页约束在 fetchXml 内
+    （`<fetch ... count="10" page="1">`）。生成的工具把 fetchXml 默认为 None，
+    调用方省略后即退化为无界查询，实测 >90s 超时。
+    """
+    name = query_defining_param(query_params)
+    if not name:
+        return None
+    return {
+        "param": name,
+        "reason": "query_defining_param_must_be_required",
+        "evidence": "省略该参数会退化为无界查询（实测 >90s 超时 vs 带参数 3.1s）",
+    }
+
+
 def _heavy_response_suggestion(
     sample_count: int,
     total_size: int,
@@ -608,6 +733,22 @@ def analyze_capture(
     # ---- C-3: 噪音标记（不删除，保留人工复核权） --------------------------
     for endpoint in endpoints:
         endpoint["noise"] = _is_noise(endpoint["host"], endpoint["path"])
+
+    # ---- Issue #15: 可独立生成性标记（标记不删除，保留人工复核权） --------
+    for endpoint in endpoints:
+        ep_path = endpoint.get("path") or ""
+        if is_odata_bound_function(ep_path):
+            # 绑定函数依赖父请求上下文参数，独立成工具必失败
+            endpoint["not_independently_callable"] = True
+            endpoint["not_callable_reason"] = "odata_bound_function"
+        pagination = suggest_pagination(endpoint.get("query_params"),
+                                        bool(endpoint.get("batch_parent")),
+                                        ep_path)
+        if pagination:
+            endpoint["pagination_suggested"] = pagination
+        required_query = require_query_param_suggestion(endpoint.get("query_params"))
+        if required_query:
+            endpoint["required_query_param"] = required_query
 
     # ---- B-1: 命名参数化二遍处理 + 同构合并 -------------------------------
     merged: dict[tuple[str, str, str], dict[str, Any]] = {}

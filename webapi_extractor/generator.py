@@ -281,6 +281,46 @@ def _looks_identity_or_time(ident: str) -> bool:
     )
 
 
+def _safe_default_query(param_name: str, values: list) -> str:
+    """为「查询即内容」的参数生成安全默认值。
+
+    原则：**保留查询结构，剥离身份数据，强制带上分页上限**。
+
+    不能直接烘抓包里的原值——那是当时那个用户的查询（含具体 objectid、
+    时间戳等），既泄漏又很快过期。也不能给空值——空值等于无界查询
+    （实测 >90s 超时）。
+
+    对 FetchXML：取样本里的根实体名与字段列表，重建一个
+    `count=50 page=1` 的安全查询，并丢掉所有 condition（过滤条件）。
+    """
+    name_low = (param_name or "").lower()
+
+    if name_low == "fetchxml" and values:
+        sample = str(values[0])
+        entity = re.search(r'<entity\s+name="([^"]+)"', sample)
+        if entity:
+            ent = entity.group(1)
+            # 必须先剥掉 <link-entity>...</link-entity> 段再取 attribute——
+            # 关联实体的字段不属于主实体，混入会报
+            # "entity doesn't contain attribute with Name = 'xxx'"（实测 400）。
+            main = re.sub(r"<link-entity\b.*?</link-entity>", "", sample, flags=re.S | re.I)
+            attrs = re.findall(r'<attribute\s+name="([^"]+)"', main)[:12]
+            # 无字段时用 all-attributes，避免生成非法 FetchXML
+            body = ("".join(f'<attribute name="{a}"/>' for a in attrs)
+                    if attrs else "<all-attributes/>")
+            # 注意：不带 <filter>，即不做任何数据过滤（不泄漏抓包时的筛选条件）
+            order = attrs[0] if attrs else "createdon"
+            return (f'<fetch version="1.0" output-format="xml-platform" mapping="logical" '
+                    f'page="1" count="50" no-lock="true"><entity name="{ent}">{body}'
+                    f'<order attribute="{order}" descending="true"/>'
+                    f'</entity></fetch>')
+
+    # 其它查询参数：给一个保守的、带分页语义的占位
+    if name_low in ("query", "sql", "odataquery"):
+        return "page=1&count=50"
+    return "count=50"
+
+
 def _render_tool(entry: dict, prefix: str) -> str:
     method = entry.get("method", "GET")
     host = entry["host"]
@@ -298,11 +338,23 @@ def _render_tool(entry: dict, prefix: str) -> str:
             params.append(f"{ident}: str")
             seen.add(ident)
     sample_count = max(int(entry.get("sample_count", 1)), 1)
+    # Issue #15: fetchXml 这类「查询即内容」的参数必须保持必填。
+    # 实测：annotations 的分页约束在 fetchXml 内（count="10" page="1"），
+    # 若降级为 None，调用方省略后即退化为无界查询（>90s 超时 vs 带参数 3.1s）。
+    req_q = entry.get("required_query_param") or {}
+    required_query_name = req_q.get("param") if req_q else None
+
     for key, values in (entry.get("query_params") or {}).items():
         ident = _py_ident(key)
         if ident in seen:
             continue
         seen.add(ident)
+        if required_query_name and key == required_query_name:
+            # 必填，但给一份**带分页上限**的安全默认（不烘真实抓包值——
+            # 那些含具体 objectid 等身份数据，泄漏且过期）。
+            safe = _safe_default_query(key, values)
+            params.append(f'{ident}: str = {safe!r}')
+            continue
         py_type = _infer_type(values)
         # 只有当参数在多轮采样中稳定取同一值时，才把它烘成默认值。
         # 单次采样（sample_count < 2）或值本身像具体数据（长串/含逗号/非 ASCII/时间戳）
@@ -321,6 +373,16 @@ def _render_tool(entry: dict, prefix: str) -> str:
             params.append(f"{ident}: {py_type} = {default}")
         else:
             params.append(f"{ident}: {py_type} | None = None")
+    # Issue #15: 从 $batch 还原且无分页参数的集合端点，注入默认上限。
+    # 实测同一端点：无上限 >90s 超时；$top=10 用 3.1s。
+    pagination = entry.get("pagination_suggested") or {}
+    inject_top = bool(pagination) and method in ("GET", "HEAD")
+    if inject_top and "top" not in seen:
+        # 用更贴近 OData 的参数名；调用方可以覆盖
+        params.append("top: int = 50")
+        seen.add("top")
+        desc += "（默认 top=50 限制返回量，避免全表拉取超时）"
+
     has_body = bool(entry.get("request_schema")) and mutating
     if has_body:
         params.append("payload: dict | None = None")
@@ -335,6 +397,9 @@ def _render_tool(entry: dict, prefix: str) -> str:
         call_path = '"' + path + '"'
     call_args = [f'"{host}"', f'"{method}"', call_path]
     query_items = [f'"{_py_ident(k)}": {_py_ident(k)}' for k in (entry.get("query_params") or {})]
+    if inject_top:
+        # $top 对 OData 生效；对非 OData 服务端由 _request 侧透传，无害
+        query_items.append('"$top": top')
     if query_items:
         call_args.append("params={" + ", ".join(query_items) + "}")
     if has_body:
