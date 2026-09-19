@@ -105,6 +105,8 @@ def session_to_registry_entries(analysis: dict[str, Any], session_id: str, inclu
 
     Issue #15：默认同时跳过 `not_independently_callable` 的端点
     （OData 绑定函数依赖父请求上下文参数，独立成工具必失败）。
+    Issue #16：默认跳过 `non_json_response` 的端点（页面/控件端点，响应为
+    HTML/302，非 JSON 数据接口）。
     传 include_noise=True 可保留（用于人工复核）。
     """
     used: set[str] = set()
@@ -113,6 +115,8 @@ def session_to_registry_entries(analysis: dict[str, Any], session_id: str, inclu
         if endpoint.get("noise") and not include_noise:
             continue
         if endpoint.get("not_independently_callable") and not include_noise:
+            continue
+        if endpoint.get("non_json_response") and not include_noise:
             continue
         path = endpoint.get("path", "")
         path_params = [seg.strip("{}") for seg in path.split("/") if seg.startswith("{")]
@@ -133,6 +137,8 @@ def session_to_registry_entries(analysis: dict[str, Any], session_id: str, inclu
             # Issue #15: 透传可独立生成性标记，供生成阶段注入默认分页上限
             "not_independently_callable": bool(endpoint.get("not_independently_callable")),
             "not_callable_reason": endpoint.get("not_callable_reason"),
+            # Issue #16: 透传非 JSON 响应标记，供人工复核
+            "non_json_response": bool(endpoint.get("non_json_response")),
             "pagination_suggested": endpoint.get("pagination_suggested"),
             "required_query_param": endpoint.get("required_query_param"),
             "status": "active",

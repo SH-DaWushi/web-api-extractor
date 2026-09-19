@@ -540,6 +540,40 @@ def _header_value(headers: dict[str, Any] | None, name: str) -> str:
     return ""
 
 
+def _is_json_content_type(content_type: str | None) -> bool:
+    """响应 Content-Type 是否为 JSON（含 OData / ``+json`` / text/json 变体）。
+
+    Issue #16：页面/控件端点（.axd/.aspx/.asmx/.svc 等）响应 text/html 或 302，
+    不是 JSON 数据接口，不能生成「调用并解析 JSON」的工具。
+    """
+    if not content_type:
+        return False
+    media = content_type.split(";", 1)[0].strip().lower()
+    return media in {"application/json", "text/json"} or media.endswith("+json")
+
+
+def _non_json_response(responses: list[dict[str, Any]]) -> bool:
+    """Issue #16：端点样本的响应是否「非 JSON」（页面/控件端点）。
+
+    判定保守：只要任一响应头是 JSON，就视为数据接口、不标记（避免把偶尔返回
+    HTML 错误页的正常接口误杀）；反之，若观察到非 JSON 响应头或 3xx 重定向、
+    且无任何 JSON 证据，则标记。仅标记不删除，保留人工复核权。
+    """
+    saw_json = False
+    saw_non_json = False
+    for response in responses:
+        content_type = _header_value(response.get("headers"), "Content-Type")
+        if content_type:
+            if _is_json_content_type(content_type):
+                saw_json = True
+            else:
+                saw_non_json = True
+        status = response.get("status")
+        if isinstance(status, int) and 300 <= status < 400:
+            saw_non_json = True
+    return saw_non_json and not saw_json
+
+
 def _parse_json_batch(body: str) -> list[dict[str, Any]]:
     """OData JSON-batch / Graph batch：{"requests": [{method, url, body}]}。"""
     try:
@@ -722,6 +756,8 @@ def analyze_capture(
                 "query_params": {k: v for k, v in query_params.items()},
                 "request_schema": _json_schema(request_body_values[0], request_body_values) if request_body_values else None,
                 "response_schema": _json_schema(response_values[0], response_values) if response_values else None,
+                # Issue #16: 响应非 JSON（页面/控件端点）→ 标记不删除，生成阶段默认跳过
+                "non_json_response": _non_json_response([s["response"] for s in selected]),
                 "description": None,
                 "notes": None,
                 "param_name_guessed": bool(item.parameter_names),
@@ -766,6 +802,7 @@ def analyze_capture(
             keep["sample_count"] = keep.get("sample_count", 1) + ep.get("sample_count", 1)
             keep["auth_required"] = keep.get("auth_required") or ep.get("auth_required")
             keep["noise"] = keep.get("noise") and ep.get("noise")  # 任一非噪音即保留
+            keep["non_json_response"] = keep.get("non_json_response", False) and ep.get("non_json_response", False)
             keep["total_response_bytes"] = keep.get("total_response_bytes", 0) + ep.get("total_response_bytes", 0)
             keep["max_response_bytes"] = max(keep.get("max_response_bytes", 0), ep.get("max_response_bytes", 0))
             for k, v in (ep.get("query_params") or {}).items():
