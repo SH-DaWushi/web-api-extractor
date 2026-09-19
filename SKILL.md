@@ -42,9 +42,12 @@ doctor 全绿（端口 WARN 可忽略）后再继续。
 `probe_login` 等是**本技能自带的 MCP 工具**。若宿主环境没把它们注册成可直接调用的工具，用自带的 HTTP 传输 + 驱动脚本来调：
 
 ```bash
-# 1) 启动本地 HTTP MCP 服务（后台常驻，全程保持运行）
-python run_http.py            # 监听 127.0.0.1:8422/mcp
-#   等价： python -m webapi_extractor serve-http
+# 1) 启动本地 HTTP MCP 服务（脱离宿主进程，全程保持运行）
+python start_server.py          # 监听 127.0.0.1:8422/mcp
+#   附加开关：
+#   python start_server.py --status    # 查看状态（端口/PID/日志）
+#   python start_server.py --stop      # 停止
+#   python start_server.py --port 8423 # 换端口
 
 # 2) 另开命令，用驱动脚本调用任意工具
 python mcp_call.py <tool_name> '<json_arguments>'
@@ -54,6 +57,14 @@ python mcp_call.py <tool_name> '<json_arguments>'
 #   例： python mcp_call.py start_capture @args.json
 #   例： echo '{...}' | python mcp_call.py start_capture -
 ```
+
+> ⚠️ **务必用 `start_server.py` 启动，不要直接在宿主 shell 的后台任务里跑 `run_http.py`。**
+> 直接后台运行时，服务进程仍留在宿主 shell 的 **job object** 内；宿主回收 shell 时，
+> Windows 会连带终止 job 内所有进程——包括服务本身，以及它通过 Playwright 拉起的
+> Chromium 子进程。症状是浏览器窗口**一闪即消失**、端口失去监听，而服务日志末尾完全
+> 正常（属被外部终止，非自身崩溃），极易误判成"目标网站有问题"。
+> `start_server.py` 用 `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP |
+> CREATE_BREAKAWAY_FROM_JOB` 让服务彻底独立，并把日志与 PID 落盘。
 
 `mcp_call.py` 会把会话 id 缓存到 `.mcp_session`，多次调用复用同一服务进程（会话状态在内存里，**服务不能中途重启**）。
 
@@ -183,7 +194,8 @@ python mcp_call.py start_capture '{"url":"https://example.com/","auth_state_path
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 工具无法调用 / 找不到 `probe_login` | 宿主未注册本技能工具 | 用步骤 0.5：`run_http.py` + `mcp_call.py` |
+| 工具无法调用 / 找不到 `probe_login` | 宿主未注册本技能工具 | 用步骤 0.5：`start_server.py` + `mcp_call.py` |
+| 浏览器「打开后立刻消失」、端口无监听 | 服务被宿主 shell 的 job 回收 | 用 `start_server.py` 启动（见步骤 0.5），勿直接后台跑 `run_http.py` |
 | `mcp_call.py` 报 `Invalid \escape` | Windows 路径反斜杠 | 路径改用正斜杠，或用 `@file` / stdin 传参 |
 | `open_browser_login` 秒完成、没等我登录 | 旧版检测缺陷 | 已修（三层信号）；仍异常时用种子 auth_state 兜底 |
 | `start_capture` 一直 `authenticating`、抓不到 | 未登录置位 | 传 `auth_state_path`；或 `confirm_login_ready`；或点页内「登录完成」 |
