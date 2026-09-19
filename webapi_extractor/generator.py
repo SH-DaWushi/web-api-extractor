@@ -344,6 +344,27 @@ from fastmcp import FastMCP
 _HERE = Path(__file__).resolve().parent
 
 
+def _unquote_env_value(raw: str) -> str:
+    """剥离 dotenv 风格的引号与行内注释。
+
+    密钥常含 base64 的 '=' 补位、'+'、'/'，运维按惯例写成
+
+        SITE_TOKEN="abc=def"
+
+    时，若不剥引号会把引号也带进环境变量，导致鉴权失败且错误信息不指向根因。
+    """
+    v = raw.strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+        # 成对引号：整体去掉，内部原样保留（含 # 与 =）
+        return v[1:-1]
+    # 无引号：按 dotenv 惯例剥离行内注释（空格 + #）
+    for marker in (" #", "\t#"):
+        idx = v.find(marker)
+        if idx != -1:
+            v = v[:idx]
+    return v.strip()
+
+
 def _load_dotenv() -> None:
     env_file = _HERE / ".env"
     if not env_file.exists():
@@ -354,7 +375,7 @@ def _load_dotenv() -> None:
             if not line or line.startswith("#") or "=" not in line:
                 continue
             k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip())
+            os.environ.setdefault(k.strip(), _unquote_env_value(v))
     except OSError:
         pass
 
