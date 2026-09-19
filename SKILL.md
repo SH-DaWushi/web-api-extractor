@@ -91,6 +91,31 @@ python mcp_call.py <tool_name> '<json_arguments>'
 
 `http_login` 返回 `fallback=interactive` 时，改用 `open_browser_login`。
 
+### 无法用构造请求登录的站点（验证码 / 凭据加密 / MFA / SSO）
+
+相当一部分站点**无法**靠 Agent 构造 POST 登录：登录需要**验证码**、**前端加密的账号密码**、
+二次验证或 SSO 跳转。`http_login` 对这类站点必然失败。
+
+> 实测：传统 OA 系统（`/api/auth/login/login`）的 `username` 与 `user_password`
+> 均为 RSA 密文（351 字符），且必须带 `captcha` 验证码——
+> 构造请求登录**不可行**。
+
+**这类站点一律走 CDP 交互式登录**，并按「一次性授权 + Cookie 复用 + 过期重授权」使用：
+
+1. **初次授权** —— `open_browser_login(url)`，让用户在**真实浏览器**里完成登录
+   （验证码、二次验证、SSO 都由人完成）；`get_login_status` 判到完成后，
+   登录态落盘为 `<数据目录>/auth_states/<site>.json`。
+2. **留存复用** —— 该 auth_state 就是**长期凭据**。后续 `start_capture` 传
+   `auth_state_path` 复用它；生成的 MCP 若为 Cookie 鉴权，同样复用它，
+   **无需再次登录**。
+3. **过期重授权** —— Cookie 失效后（工具 401 或跳回登录页），**重新触发一次
+   `open_browser_login` 覆盖同一个 auth_state 文件**即可。不必重建项目、
+   不必重抓全部接口——端点只标 `unseen_since`，**永不自动删除**（见步骤 7）。
+
+> ⚠️ 不要为这类站点**逆向其登录加密或验证码**：既不必要，也极不稳定。
+> 交互式授权一次、复用 Cookie，才是这类系统唯一可靠的路子。
+> 相应地，生成的 MCP 不必带 `login()` 工具——**Cookie 即凭据**。
+
 **兜底做法（推荐，抓包登录合一）**：直接给 `start_capture` 传**种子 auth_state**：
 
 ```bash
@@ -197,12 +222,13 @@ python mcp_call.py start_capture '{"url":"https://example.com/","auth_state_path
 | 工具无法调用 / 找不到 `probe_login` | 宿主未注册本技能工具 | 用步骤 0.5：`start_server.py` + `mcp_call.py` |
 | 浏览器「打开后立刻消失」、端口无监听 | 服务被宿主 shell 的 job 回收 | 用 `start_server.py` 启动（见步骤 0.5），勿直接后台跑 `run_http.py` |
 | `mcp_call.py` 报 `Invalid \escape` | Windows 路径反斜杠 | 路径改用正斜杠，或用 `@file` / stdin 传参 |
-| `open_browser_login` 秒完成、没等我登录 | 旧版检测缺陷 | 已修（三层信号）；仍异常时用种子 auth_state 兜底 |
+| `open_browser_login` 秒完成、浏览器随即消失、没等我登录 | 登录页**自设**的 `JSESSIONID` / `PHPSESSID` / `PHPSESSID` 等被误判为登录证据，判 completed 后浏览器被关（#20 已修：改为比对登录前 Cookie 基线） | 用最新版；若仍出现，检查 `auth.py:_login_evidence()` 的基线快照时机 |
 | `start_capture` 一直 `authenticating`、抓不到 | 未登录置位 | 传 `auth_state_path`；或 `confirm_login_ready`；或点页内「登录完成」 |
 | doctor 报缺 Chromium | 内核未装 | `python -m playwright install chromium` 或 `doctor --install` |
 | pip 报 `WinError 1392` / dist-info 损坏 | 全局 user site 损坏 | 用 bootstrap 的独立 `.venv` |
 | `analyze_traffic` 摘要不够看 | 完整 Schema 更大 | 读返回里的 `full_result_path`（analysis.json） |
 | 端口 8422 被占 | 服务已在跑或冲突 | 复用已运行服务，或改 `run_http.py` 端口 |
+| 生成的工具 401 / 跳回登录页 | Cookie 已过期 | 重新触发一次 `open_browser_login` 完成交互式登录，覆盖同一 `auth_states/<site>.json`；无需重建项目（见步骤 2） |
 | 生成的工具 401 | Basic 口令没填 | scheme 已按实测生成；在 `.env` 填 `<前缀>_BASIC_PASSWORD_<HOST>`（抓包 scripts/ 搜 `btoa(` 找固定串）与 token |
 | merge/regenerate 被拒 `project_locked` | 项目被锁定 | 人工编辑 project.json 的 locked 字段解锁 |
 | 生成的工具 401 后未自动重登录 | 无登录配置或无凭据 | 确认 auth_login 已识别；调用一次 login() 或在 .env 配凭据（之后走加密缓存） |
