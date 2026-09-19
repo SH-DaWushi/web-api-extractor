@@ -53,7 +53,7 @@ def registrable_domain(host: str) -> str:
 
     >>> registrable_domain("crm.example.com.cn")
     'example.com.cn'
-    >>> registrable_domain("adfs.example.com")
+    >>> registrable_domain("idp.example.com.cn")
     'example.com.cn'
     >>> registrable_domain("www.example.com")
     'example.com'

@@ -15,7 +15,7 @@ class TestRegistrableDomain:
     @pytest.mark.parametrize("host,expected", [
         # 核心修复：ccTLD 二级后缀必须取三段
         ("crm.example.com.cn", "example.com.cn"),
-        ("adfs.example.com", "example.com.cn"),
+        ("idp.example.com.cn", "example.com.cn"),
         ("a.b.c.example.com.cn", "example.com.cn"),
         ("deep.sub.example.co.uk", "example.co.uk"),
         ("x.y.z.example.co.jp", "example.co.jp"),

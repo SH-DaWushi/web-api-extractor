@@ -20,7 +20,7 @@ from webapi_extractor.analyzer import (  # noqa: E402
 )
 
 JX3BOX_HOST = "api.example.com"
-OTHER_HOST = "crm.example.com:446"
+OTHER_HOST = "other.example.com:8443"
 
 # 修复前的通用别名（git 基线原值），用于等价性对照。
 LEGACY_ALIAS = {"is_my": "article_id", "content_meta": "content_meta_id",
