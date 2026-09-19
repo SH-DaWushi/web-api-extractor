@@ -303,6 +303,101 @@ def _json_schema(value: Any, samples: list[Any] | None = None) -> dict[str, Any]
     return {"type": "string"}
 
 
+# --------------------------------------------------------------------------- #
+# Issue #3: OData / OData-like $batch 子请求解析
+#
+# POST /api/data/v9.0/$batch（multipart/mixed）内部的子请求才是真正的业务查询，
+# 顶层 URL 只看到 $batch 一个端点。此机制通用于所有 multipart 批处理服务端：
+# Dynamics 365 / SharePoint / SAP Gateway / Salesforce Composite / Graph API。
+# 子请求解析为独立端点后，才能被生成为独立 MCP 工具（调用方无需手工拼 multipart）。
+# --------------------------------------------------------------------------- #
+_MULTIPART_CT = re.compile(r"multipart/\w+", re.I)
+_BOUNDARY_RE = re.compile(r'boundary\s*=\s*"?([^";,\s]+)"?', re.I)
+# 子请求起始行：METHOD <relative-path> HTTP/1.1（路径可能含复杂查询串）
+_METHOD_LINE = re.compile(r"^([A-Z]{3,7})[ \t]+(\S+)[ \t]+HTTP/[\d.]+", re.M)
+# 显式声明 OData 批处理的 URL 形态
+_BATCH_URL = re.compile(r"(?:^|/)\$(?:batch|b1)\b", re.I)
+# 抓包中的 postData 可能是 CRLF 或 LF（Chromium/存储链路会归一化），两者都要兼容。
+_BLANK_LINE = re.compile(r"\r?\n\r?\n")
+
+
+def _header_value(headers: dict[str, Any] | None, name: str) -> str:
+    """大小写不敏感地取头值（redact_headers 保留原始大小写，可能是 content-type）。"""
+    for key, value in (headers or {}).items():
+        if str(key).lower() == name.lower():
+            return str(value)
+    return ""
+
+
+def _parse_json_batch(body: str) -> list[dict[str, Any]]:
+    """OData JSON-batch / Graph batch：{"requests": [{method, url, body}]}。"""
+    try:
+        payload = json.loads(body)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    requests = (payload or {}).get("requests") if isinstance(payload, dict) else None
+    if not isinstance(requests, list):
+        return []
+    return [{"method": str(item.get("method", "GET")).upper(), "path": item.get("url", ""),
+             "headers": item.get("headers") or {}, "body": item.get("body")}
+            for item in requests if isinstance(item, dict) and item.get("url")]
+
+
+def _parse_multipart_requests(body: str | None,
+                              content_type: str | None = None) -> list[dict[str, Any]]:
+    """解析 multipart/mixed 批处理请求体，返回 [{method, path, headers, body}]。
+
+    兼容三种形态（通用，不针对单一站点）：
+      * OData multipart/mixed（Dynamics / SharePoint / SAP Gateway）；
+      * Salesforce Composite 风格的 JSON batch（{"batchRequests": [...]}）；
+      * Graph JSON-batch（{"requests": [...]}）。
+    boundary 优先取 Content-Type，缺失时从 body 首个 ``--`` 行推断——
+    抓包的 postData 存的就是 multipart 原文。
+    """
+    if not body:
+        return []
+    lowered = (content_type or "").lower()
+    if "json" in lowered:
+        parsed = _parse_json_batch(body)
+        if parsed:
+            return parsed
+
+    boundary = ""
+    match = _BOUNDARY_RE.search(content_type or "")
+    if match:
+        boundary = match.group(1)
+    if not boundary:
+        first_line = body.lstrip("﻿ \t\r\n").split("\n", 1)[0].strip()
+        if first_line.startswith("--"):
+            boundary = first_line[2:].strip()
+    if not boundary:
+        return _parse_json_batch(body)
+
+    out: list[dict[str, Any]] = []
+    for chunk in body.split("--" + boundary)[1:]:
+        if chunk.startswith("--"):
+            continue  # 结束标记 --boundary--
+        match = _METHOD_LINE.search(chunk)
+        if not match:
+            continue
+        method, target = match.group(1).upper(), match.group(2)
+        # 子请求自身的头与体以空行分隔；无体时空行后即为下一个 boundary 段。
+        remainder = chunk[match.end():]
+        pieces = _BLANK_LINE.split(remainder, 1)
+        request_body = pieces[1] if len(pieces) == 2 else ""
+        # 嵌套 changeset 的结尾 boundary（--cs1--）不属于子请求体，需截掉。
+        request_body = re.split(r"\r?\n--", request_body, 1)[0].strip("\r\n")
+        out.append({"method": method, "path": target, "headers": {}, "body": request_body or None})
+    return out
+
+
+def _absolute_url(base_netloc: str, scheme: str, target: str) -> str:
+    """把子请求的相对路径与父请求的 scheme+host 拼接成绝对 URL。"""
+    if target.startswith("http://") or target.startswith("https://"):
+        return target
+    return f"{scheme or 'https'}://{base_netloc}" + (target if target.startswith("/") else "/" + target)
+
+
 def _load_events(capture_path: Path) -> list[dict[str, Any]]:
     events = []
     if not capture_path.exists():
@@ -346,6 +441,28 @@ def analyze_capture(
         grouped[(request.get("method", "GET"), parsed.netloc)].append(sample)
         if request.get("auth_candidate"):
             auth_candidates.append({"request_id": request_id, "url": url, "method": request.get("method"), "token_paths": request.get("token_paths", [])})
+        # Issue #3: 解析 multipart/mixed（或 JSON-batch）里的子请求，作为独立端点。
+        # 仅对显式批处理 URL 或 multipart Content-Type 的请求尝试，避免误伤普通 POST。
+        content_type = _header_value(request.get("headers"), "Content-Type")
+        post_data = request.get("postData")
+        if post_data and (_BATCH_URL.search(path) or _MULTIPART_CT.search(content_type)):
+            scheme = parsed.scheme or "https"
+            for sub in _parse_multipart_requests(post_data, content_type):
+                sub_url = _absolute_url(parsed.netloc, scheme, sub["path"])
+                grouped[(sub["method"], parsed.netloc)].append({
+                    "request": {
+                        "url": sub_url, "method": sub["method"],
+                        "headers": request.get("headers", {}),
+                        "postData": sub.get("body"),
+                        "resourceType": "XHR", "auth_candidate": request.get("auth_candidate"),
+                        "token_paths": request.get("token_paths", []),
+                    },
+                    "response": {},
+                    # 子请求响应体无独立记录；复用父请求的元数据（size 等）
+                    "body": {},
+                    "batch_parent": {"request_id": request_id, "url": url,
+                                     "method": request.get("method"), "path": path},
+                })
     endpoints: list[dict[str, Any]] = []
     for (method, host), samples in grouped.items():
         normalized = normalize_paths([sample["request"].get("url", "") for sample in samples])
@@ -395,6 +512,8 @@ def analyze_capture(
                 "param_name_guessed": bool(item.parameter_names),
                 "total_response_bytes": total_size,
                 "max_response_bytes": max_size,
+                # Issue #3 溯源：子请求记录其父 $batch，便于人工复核拼装关系
+                "batch_parent": first.get("batch_parent"),
             })
     # ---- C-3: 噪音标记（不删除，保留人工复核权） --------------------------
     for endpoint in endpoints:
