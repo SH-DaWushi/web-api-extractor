@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
+from urllib.parse import unquote_plus
 
 from .crypto_analyzer import value_shape
 
@@ -12,6 +13,15 @@ from .crypto_analyzer import value_shape
 SECRET_FIELD_NAMES = {"password", "passwd", "pwd", "secret", "captcha_code"}
 TOKEN_FIELD_PATTERN = re.compile(r"(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key|secret)", re.I)
 LOGIN_PATH_PATTERN = re.compile(r"(?:^|/)(?:login|signin|sign-in|auth|session|token|oauth)(?:/|$)", re.I)
+
+# 复合命名的凭据字段：user_password / login_password / oldPwd / secretKey ……
+# 只做精确匹配会全部漏掉，而它们与 password 同等敏感。
+_SECRET_MARKERS = ("password", "passwd", "pwd", "secret", "passcode")
+
+
+def _is_secret_field(name: Any) -> bool:
+    low = str(name).lower()
+    return low in SECRET_FIELD_NAMES or any(marker in low for marker in _SECRET_MARKERS)
 
 
 def is_auth_candidate(url: str, post_data: str | None = None) -> bool:
@@ -40,7 +50,7 @@ def _redact_json(value: Any, path: str = "$") -> tuple[Any, list[str], dict[str,
         redacted = {}
         for key, item in value.items():
             child_path = f"{path}.{key}"
-            if str(key).lower() in SECRET_FIELD_NAMES:
+            if _is_secret_field(key):
                 redacted[key] = "***"
                 if isinstance(item, str):
                     shape_meta[child_path] = {"len": len(item), "shape": value_shape(item)}
@@ -79,13 +89,66 @@ def redact_headers(headers: dict[str, str]) -> dict[str, str]:
     return result
 
 
+def _parse_form_urlencoded(payload: str) -> list[tuple[str, str]] | None:
+    """把 ``application/x-www-form-urlencoded`` 体解析为 [(字段名, 原样值)]。
+
+    不像表单编码时返回 None（此时调用方按原样保留）。
+    JSON / XML / HTML 体一律不当作表单，避免误伤。
+    """
+    if not payload or payload.lstrip()[:1] in ("{", "[", "<"):
+        return None
+    if "=" not in payload:
+        return None
+    pairs: list[tuple[str, str]] = []
+    for part in payload.split("&"):
+        if not part:
+            continue
+        if "=" not in part:
+            return None          # 出现非 k=v 段，不认作表单编码
+        name, value = part.split("=", 1)
+        pairs.append((name, value))
+    return pairs or None
+
+
+def _redact_form(payload: str) -> tuple[str, list[str], dict[str, dict]]:
+    """表单编码体的脱敏，语义与 _redact_json 一致（值遮蔽 + 保留形态元数据）。
+
+    修复前这里直接原样返回，导致**表单提交的明文密码被完整写进 capture.jsonl**
+    （见 issue #22）。
+    """
+    pairs = _parse_form_urlencoded(payload)
+    if pairs is None:
+        return payload, [], {}
+    out: list[str] = []
+    token_paths: list[str] = []
+    shape_meta: dict[str, dict] = {}
+    for name, raw_value in pairs:
+        field = unquote_plus(name)
+        value = unquote_plus(raw_value)
+        secret = _is_secret_field(field)
+        token = bool(TOKEN_FIELD_PATTERN.search(field)) and len(value) >= 16
+        if value and (secret or token):
+            path = f"$.{field}"
+            shape_meta[path] = {"len": len(value), "shape": value_shape(value)}
+            if token:
+                token_paths.append(path)
+            out.append(f"{name}=***")
+        else:
+            out.append(f"{name}={raw_value}")
+    return "&".join(out), token_paths, shape_meta
+
+
 def redact_payload(payload: str | None) -> tuple[str | None, list[str], dict[str, dict]]:
-    """Returns (redacted_json, token_paths, shape_meta). shape_meta 见 _redact_json。"""
+    """Returns (redacted_payload, token_paths, shape_meta). shape_meta 见 _redact_json。
+
+    支持 JSON 与 ``application/x-www-form-urlencoded`` 两种体；
+    两者都遮蔽敏感值并保留形态元数据（len/shape），供密文判定复用。
+    """
     if payload is None:
         return None, [], {}
     try:
         parsed = json.loads(payload)
     except json.JSONDecodeError:
-        return payload, [], {}
+        return _redact_form(payload)
     redacted, token_paths, shape_meta = _redact_json(parsed)
     return json.dumps(redacted, ensure_ascii=False, separators=(",", ":")), token_paths, shape_meta
