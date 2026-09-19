@@ -5,3 +5,6 @@ __pycache__/
 .mcp_session
 .venv/
 *.bak
+# start_server.py 的运行产物（PID 与日志），不入库
+.server_pid
+server.log

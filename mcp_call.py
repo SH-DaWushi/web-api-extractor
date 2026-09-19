@@ -40,9 +40,13 @@ def post(client: httpx.Client, payload: dict, sid: str | None):
     if sid:
         h["Mcp-Session-Id"] = sid
     r = client.post(BASE, headers=h, json=payload)
-    r.raise_for_status()
     new_sid = r.headers.get("mcp-session-id")
     out = r.text
+    # 不要在这里 raise_for_status()：陈旧会话会得到 HTTP 404，而 404 正是
+    # _is_stale_session 要识别的恢复信号——先抛异常会让恢复分支永远执行不到
+    # （issue #17）。把状态码原样带回，由调用方判定。
+    if r.status_code >= 400:
+        return {"http_status": r.status_code, "http_body": out[:500]}, new_sid
     # parse SSE or JSON
     if out.startswith("event:") or "\ndata: " in out:
         for line in out.splitlines():
@@ -85,6 +89,8 @@ def main():
         }, sid)
         # E-2: cached session id goes stale after a server restart; the server
         # then answers 404. Detect, re-initialize once, retry automatically.
+        # 该恢复分支此前是死代码——post() 的 raise_for_status() 会把 404 提前
+        # 抛成异常（issue #17）。
         if _is_stale_session(resp):
             sys.stderr.write("缓存的 MCP 会话已失效（服务可能重启过），重新初始化并重试...\n")
             try:
@@ -96,12 +102,27 @@ def main():
                 "jsonrpc": "2.0", "id": 2, "method": "tools/call",
                 "params": {"name": tool, "arguments": args},
             }, sid)
+        elif isinstance(resp, dict) and resp.get("http_status"):
+            # 非「会话失效」的 HTTP 错误：保持原先硬失败的语义，但给出可读信息
+            # 而非裸 traceback。
+            raise SystemExit(
+                f"HTTP {resp['http_status']} from {BASE}\n{resp.get('http_body', '')}")
         print(json.dumps(resp, ensure_ascii=False, indent=2))
 
 
 def _is_stale_session(resp) -> bool:
-    """Heuristic: stale-session failures surface as protocol errors or 404 text."""
+    """陈旧会话的判据：服务端对未知 Mcp-Session-Id 答 404。
+
+    post() 对 HTTP >= 400 返回 ``{"http_status": N, "http_body": ...}``，
+    故这里先认该形态；其余分支兼容 JSON-RPC 协议错误形态。
+    """
     if not isinstance(resp, dict):
+        return False
+    if resp.get("http_status") == 404:
+        return True
+    if "http_status" in resp:
+        # 明确的 HTTP 错误：已由状态码判定，不再靠字符串猜（否则 500 响应体里
+        # 恰好出现 "404" 就会被误判成会话失效，白白重建一次会话）。
         return False
     err = resp.get("error")
     if isinstance(err, dict) and (err.get("code") == -32001 or "404" in str(err.get("message", ""))):
