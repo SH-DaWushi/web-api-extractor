@@ -14,6 +14,7 @@ try {
         "requirements.txt",
         "README.md",
         "SKILL.md",
+        "runbook",
         "install-agent.ps1",
         ".vscode",
         "webapi_extractor",
