@@ -15,6 +15,22 @@ from .redaction import is_auth_candidate, redact_headers, redact_payload
 from .storage import SessionStore, utc_now
 
 
+# Chromium M117+ 把 Cookie/Sec-* 等「浏览器合成头」从 requestWillBeSent 移到
+# requestWillBeSentExtraInfo。两个事件共用 requestId，ExtraInfo 通常先到。
+# 未配对的 ExtraInfo 缓存上限与存活时长（防止长会话内存膨胀）。
+_MAX_PENDING_EXTRA = 2048
+_PENDING_EXTRA_TTL = 300.0
+
+
+def _merge_headers(base: dict[str, Any] | None, extra: dict[str, Any] | None) -> dict[str, Any]:
+    """合并两批头，大小写不敏感；ExtraInfo（Cookie/Sec-* 的权威来源）优先。"""
+    merged: dict[str, tuple[str, Any]] = {}
+    for source in (base, extra):
+        for name, value in (source or {}).items():
+            merged[name.lower()] = (name, value)
+    return {name: value for name, value in merged.values()}
+
+
 class CaptureSession:
     def __init__(self, session_id: str, url: str, store: SessionStore, response_limit: int, idle_timeout: int, auth_state_path: str | None = None) -> None:
         self.session_id = session_id
@@ -36,6 +52,12 @@ class CaptureSession:
         self.cdp_sessions: dict[Any, Any] = {}
         self.request_targets: dict[str, Any] = {}
         self.request_meta: dict[str, dict[str, Any]] = {}
+        # requestId -> 已写入 capture.jsonl 的 request 事件；ExtraInfo 后到时原地补丁。
+        self.emitted_requests: dict[str, dict[str, Any]] = {}
+        # requestId -> (monotonic, ExtraInfo headers)；ExtraInfo 先到时暂存待配对。
+        self.pending_extra: dict[str, tuple[float, dict[str, Any]]] = {}
+        # ExtraInfo 已到、requestWillBeSent 未到：合并逻辑交给 on_request 处理，
+        # 这里只需在 on_request 取用后清理，避免长会话内存泄漏。
         self.event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self.writer_task: asyncio.Task[Any] | None = None
         self.idle_task: asyncio.Task[Any] | None = None
@@ -138,10 +160,18 @@ class CaptureSession:
         await cdp.send("Runtime.enable")
         await cdp.send("Target.setAutoAttach", {"autoAttach": True, "flatten": True, "waitForDebuggerOnStart": False})
         cdp.on("Network.requestWillBeSent", lambda event: asyncio.create_task(self.on_request(event, cdp)))
+        # Issue #1: M117+ 的 Cookie/Sec-* 合成头只在 ExtraInfo 事件里，必须一并订阅。
+        cdp.on("Network.requestWillBeSentExtraInfo", lambda event: asyncio.create_task(self.on_request_extra_info(event, cdp)))
         cdp.on("Network.responseReceived", lambda event: asyncio.create_task(self.on_response(event, cdp)))
         cdp.on("Network.loadingFinished", lambda event: asyncio.create_task(self.on_finished(event, cdp)))
         cdp.on("Network.loadingFailed", lambda event: asyncio.create_task(self.emit({"type": "loading_failed", **event})))
         cdp.on("Network.webSocketCreated", lambda event: asyncio.create_task(self.emit({"type": "websocket", **event})))
+
+    @staticmethod
+    def _redacted_headers(headers: dict[str, Any] | None) -> dict[str, str]:
+        """合并后的头必须统一走 redact_headers——Cookie 脱敏成 ``name=***``，
+        analyzer 正是靠它提取 cookie_names 判定站点鉴权。"""
+        return redact_headers(headers or {})
 
     async def on_request(self, event: dict[str, Any], cdp: Any) -> None:
         if self.status != "capturing":
@@ -150,20 +180,66 @@ class CaptureSession:
         request = event.get("request", {})
         body = request.get("postData")
         redacted_body, token_paths, shape_meta = redact_payload(body)
-        headers = redact_headers(request.get("headers", {}))
         request_id = event.get("requestId", "")
-        self.request_targets[request_id] = cdp
-        self.request_meta[request_id] = {"url": request.get("url", ""), "resourceType": event.get("type")}
-        await self.emit({
+        # Issue #1: 合并 requestWillBeSent 与（通常先到的）ExtraInfo 里的头。
+        extra = self._take_pending_extra(request_id)
+        extra_headers = (extra or {}).get("headers", {}) if isinstance(extra, dict) else {}
+        record = {
             "type": "request", "ts": utc_now(), "requestId": request_id,
             "url": request.get("url"), "method": request.get("method"),
-            "headers": headers, "postData": redacted_body,
+            "headers": self._redacted_headers(_merge_headers(request.get("headers", {}), extra_headers)),
+            "postData": redacted_body,
             "resourceType": event.get("type"), "auth_candidate": is_auth_candidate(request.get("url", ""), body),
             "token_paths": token_paths,
             "redaction_meta": shape_meta,
-        })
+        }
+        # ExtraInfo 后到时会原地补丁这条记录，writer 需要拿到同一对象引用。
+        self.request_targets[request_id] = cdp
+        self.request_meta[request_id] = {"url": request.get("url", ""), "resourceType": event.get("type")}
+        self.emitted_requests[request_id] = record
+        await self.emit(record)
         if event.get("hasUserGesture") and request.get("url", "").startswith("http"):
             self.endpoint_count += 1
+
+    def _take_pending_extra(self, request_id: str) -> dict[str, Any] | None:
+        """取走并清理暂存的 ExtraInfo（附带过期清理，防止无配对的请求泄漏）。"""
+        self._prune_pending_extra()
+        entry = self.pending_extra.pop(request_id, None)
+        return entry[1] if entry else None
+
+    def _prune_pending_extra(self) -> None:
+        now = time.monotonic()
+        for key in [k for k, (ts, _) in self.pending_extra.items() if now - ts > _PENDING_EXTRA_TTL]:
+            del self.pending_extra[key]
+        # 极端情况下（ExtraInfo 永远等不到 requestWillBeSent）按 FIFO 丢弃最旧的。
+        while len(self.pending_extra) > _MAX_PENDING_EXTRA:
+            del self.pending_extra[next(iter(self.pending_extra))]
+
+    async def on_request_extra_info(self, event: dict[str, Any], cdp: Any) -> None:
+        """Chromium M117+ 的 Cookie/Sec-* 等浏览器合成头只在此事件中出现。
+
+        时序：ExtraInfo 通常早于 requestWillBeSent 到达，此时暂存待配对；
+        若 requestWillBeSent 已经发出记录（ExtraInfo 后到的少数情况），
+        直接对已入队/已落盘的 request 记录做**原地补丁**并补发一条
+        ``headers_patch`` 事件——writer 按引用读取，故两种时序都能覆盖。
+        """
+        if self.status != "capturing":
+            return
+        request_id = event.get("requestId", "")
+        headers = event.get("headers", {}) or {}
+        if not request_id:
+            return
+        record = self.emitted_requests.get(request_id)
+        if record is None:
+            self.pending_extra[request_id] = (time.monotonic(), event)
+            self._prune_pending_extra()
+            return
+        merged = self._redacted_headers(_merge_headers(record.get("headers"), headers))
+        if merged == record.get("headers"):
+            return  # 无新增（如纯重定向重发），不必产生噪音事件
+        record["headers"] = merged
+        await self.emit({"type": "headers_patch", "ts": utc_now(), "requestId": request_id,
+                         "headers": merged, "reason": "requestWillBeSentExtraInfo_late"})
 
     async def on_response(self, event: dict[str, Any], cdp: Any) -> None:
         if self.status != "capturing":
@@ -201,6 +277,10 @@ class CaptureSession:
             await self.emit({"type": "response_body", "requestId": request_id, "body": payload, "body_truncated": size > self.response_limit, "size": size, "base64Encoded": encoded})
         except Exception as exc:
             await self.emit({"type": "response_body", "requestId": request_id, "body_unavailable_reason": type(exc).__name__})
+        finally:
+            # 请求结束：释放 Issue #1 的配对缓存，避免长会话内存泄漏。
+            self.emitted_requests.pop(request_id, None)
+            self.pending_extra.pop(request_id, None)
 
     async def emit(self, event: dict[str, Any]) -> None:
         if self.status == "capturing":
