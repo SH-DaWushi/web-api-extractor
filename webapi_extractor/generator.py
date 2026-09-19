@@ -321,6 +321,28 @@ def _safe_default_query(param_name: str, values: list) -> str:
     return "count=50"
 
 
+def _param_decl(ident: str, py_type: str, values: list, sample_count: int) -> str:
+    """产出参数声明。query 参数与表单体字段（#23）共用同一套默认值门槛。
+
+    只有当参数在多轮采样中稳定取同一值时，才把它烘成默认值。
+    单次采样（sample_count < 2）或值本身像具体数据（长串/含逗号/非 ASCII/时间戳）
+    一律不做默认值——否则会把抓包当时的真实数据（用户 ID、服务器名、时间戳）
+    写进分发包，既泄漏又会产生过期默认值。
+    """
+    stable = (
+        sample_count >= 2
+        and len(values) == 1
+        and len(str(values[0])) <= 24
+        and str(values[0]).isascii()
+        and "," not in str(values[0])
+        and not _looks_identity_or_time(ident)
+    )
+    if stable:
+        default = str(values[0]) if py_type == "int" else repr(str(values[0]))
+        return f"{ident}: {py_type} = {default}"
+    return f"{ident}: {py_type} | None = None"
+
+
 def _render_tool(entry: dict, prefix: str) -> str:
     method = entry.get("method", "GET")
     host = entry["host"]
@@ -355,24 +377,18 @@ def _render_tool(entry: dict, prefix: str) -> str:
             safe = _safe_default_query(key, values)
             params.append(f'{ident}: str = {safe!r}')
             continue
-        py_type = _infer_type(values)
-        # 只有当参数在多轮采样中稳定取同一值时，才把它烘成默认值。
-        # 单次采样（sample_count < 2）或值本身像具体数据（长串/含逗号/非 ASCII/时间戳）
-        # 一律不做默认值——否则会把抓包当时的真实数据（用户 ID、服务器名、时间戳）
-        # 写进分发包，既泄漏又会产生过期默认值。
-        stable = (
-            sample_count >= 2
-            and len(values) == 1
-            and len(str(values[0])) <= 24
-            and str(values[0]).isascii()
-            and "," not in str(values[0])
-            and not _looks_identity_or_time(ident)
-        )
-        if stable:
-            default = str(values[0]) if py_type == "int" else repr(str(values[0]))
-            params.append(f"{ident}: {py_type} = {default}")
-        else:
-            params.append(f"{ident}: {py_type} | None = None")
+        params.append(_param_decl(ident, _infer_type(values), values, sample_count))
+
+    # Issue #23: 表单编码体字段 → 具名参数（与 query 参数同一套类型推断与默认值
+    # 门槛）。传统 OA 系统 等传统系统全靠 POST 体传参，此前参数全丢，工具能连通
+    # 但必然业务报错（实测 "业务报错"）。
+    form_params = entry.get("request_body_params") or {}
+    for key, values in form_params.items():
+        ident = _py_ident(key)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        params.append(_param_decl(ident, _infer_type(values), values, sample_count))
     # Issue #15: 从 $batch 还原且无分页参数的集合端点，注入默认上限。
     # 实测同一端点：无上限 >90s 超时；$top=10 用 3.1s。
     pagination = entry.get("pagination_suggested") or {}
@@ -402,7 +418,11 @@ def _render_tool(entry: dict, prefix: str) -> str:
         query_items.append('"$top": top')
     if query_items:
         call_args.append("params={" + ", ".join(query_items) + "}")
-    if has_body:
+    if form_params:
+        # Issue #23: 表单编码体（与 JSON body 互斥）
+        call_args.append("form_body={" + ", ".join(
+            f'"{key}": {_py_ident(key)}' for key in form_params) + "}")
+    elif has_body:
         call_args.append("json_body=payload or {}")
     call = "await _request(" + ", ".join(call_args) + ")"
 
@@ -633,13 +653,22 @@ def _audit(action: str, detail: dict) -> None:
 
 
 async def _request(host: str, method: str, path: str, *, params: dict | None = None,
-                   json_body: dict | None = None, _retried_auth: bool = False) -> Any:
+                   json_body: dict | None = None, form_body: dict | None = None,
+                   _retried_auth: bool = False) -> Any:
     headers = {"Accept": "application/json, text/plain, */*"}
     headers.update(_auth_headers(host))
+    # Issue #23: 表单编码体通道。传统 OA 系统 等传统系统的接口只认
+    # application/x-www-form-urlencoded，发 JSON 会得到业务错误。
+    # httpx 只在未显式设置时才补 Content-Type，故这里可安全指定 charset。
+    if form_body is not None:
+        headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
+        body_kwargs: dict = {"data": _clean(form_body)}
+    else:
+        body_kwargs = {"json": json_body}
     try:
         async with httpx.AsyncClient(base_url=HOSTS[host], timeout=TIMEOUT) as client:
             resp = await client.request(method, path, params=_clean(params),
-                                        json=json_body, headers=headers)
+                                        headers=headers, **body_kwargs)
     except httpx.HTTPError as exc:
         _log_error(f"{method} {host}{path} network: {type(exc).__name__}: {exc}")
         raise RuntimeError(f"network error: {type(exc).__name__}: {exc}") from exc

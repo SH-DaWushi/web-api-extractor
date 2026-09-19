@@ -7,7 +7,8 @@ import json
 import re
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote_plus
+
+from .bodies import body_fields
 
 
 CRYPTO_HINTS = re.compile(r"CryptoJS|JSEncrypt|sm2|sm4|encrypt|RSA|AES", re.I)
@@ -28,33 +29,6 @@ def _looks_ciphertext(value: str) -> bool:
         except Exception:
             return False
     return bool(re.fullmatch(r"[0-9a-f]{32,}", value, re.I))
-
-
-def _body_fields(body: str | None) -> dict[str, str]:
-    """把请求体解析成 {字段名: 值}，支持 JSON 与表单编码。
-
-    Issue #21：修复前只走 ``json.loads``，表单编码
-    （``application/x-www-form-urlencoded``）必抛 ``JSONDecodeError``，
-    于是退化成「对整串判密文」——整串含 ``=``、``&``，永远判不出密文。
-    传统 OA这类「表单提交 RSA 密文」的站点因此被整体漏检。
-    """
-    if not body:
-        return {}
-    try:
-        parsed = json.loads(body)
-    except json.JSONDecodeError:
-        parsed = None
-    if isinstance(parsed, dict):
-        return {str(k): v for k, v in parsed.items() if isinstance(v, str)}
-    if body.lstrip()[:1] in ("{", "[", "<") or "=" not in body:
-        return {}
-    fields: dict[str, str] = {}
-    for part in body.split("&"):
-        if "=" not in part:
-            continue
-        name, value = part.split("=", 1)
-        fields[unquote_plus(name)] = unquote_plus(value)
-    return fields
 
 
 def value_shape(value: str) -> str:
@@ -127,7 +101,7 @@ def detect_crypto(session_dir: Path, analysis: dict[str, Any]) -> dict[str, Any]
                     findings.append({"endpoint": event.get("url"), "redacted_field": path,
                                      "shape": meta.get("shape"), "len": meta.get("len"), "ciphertext": True})
             # Issue #21: 逐字段判形态，JSON 与表单编码都覆盖（此前表单编码整体漏检）。
-            fields = _body_fields(body)
+            fields = body_fields(body)
             encrypted_fields = [name for name, value in fields.items() if _looks_ciphertext(value)]
             if encrypted_fields:
                 findings.append({"endpoint": event.get("url"), "encrypted_fields": encrypted_fields,

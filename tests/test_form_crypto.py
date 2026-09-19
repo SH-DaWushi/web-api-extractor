@@ -20,7 +20,8 @@ from pathlib import Path
 
 import pytest
 
-from webapi_extractor.crypto_analyzer import _body_fields, detect_crypto
+from webapi_extractor.bodies import body_fields
+from webapi_extractor.crypto_analyzer import detect_crypto
 
 
 # RSA-2048 密文 base64 后约 344 字符，这里按真实长度构造。
@@ -35,23 +36,23 @@ def _form_body() -> str:
 
 class TestBodyFields:
     def test_parses_form_encoded(self):
-        fields = _body_fields("a=1&b=2&c=3")
+        fields = body_fields("a=1&b=2&c=3")
         assert fields == {"a": "1", "b": "2", "c": "3"}
 
     def test_url_decodes_values(self):
         """密文里的 + / 会被编码成 %2B %2F —— 形态判定必须基于解码后的值。"""
-        fields = _body_fields("user_password=ab%2Bcd%2Fef")
+        fields = body_fields("user_password=ab%2Bcd%2Fef")
         assert fields["user_password"] == "ab+cd/ef"
 
     def test_parses_json(self):
-        assert _body_fields('{"a": "1", "b": 2}') == {"a": "1"}
+        assert body_fields('{"a": "1", "b": 2}') == {"a": "1"}
 
     def test_html_is_not_form(self):
-        assert _body_fields("<html>a=b</html>") == {}
+        assert body_fields("<html>a=b</html>") == {}
 
     def test_empty_and_none(self):
-        assert _body_fields("") == {}
-        assert _body_fields(None) == {}
+        assert body_fields("") == {}
+        assert body_fields(None) == {}
 
 
 def _session(tmp_path: Path, capture_lines: list[dict]) -> Path:

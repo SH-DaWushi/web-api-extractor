@@ -156,6 +156,8 @@ def session_to_registry_entries(analysis: dict[str, Any], session_id: str, inclu
             "path": path,
             "path_params": path_params,
             "query_params": endpoint.get("query_params", {}) or {},
+            # Issue #23: 表单编码体字段（传统 OA等传统系统的实际传参方式）
+            "request_body_params": endpoint.get("request_body_params") or {},
             "sample_count": int(endpoint.get("sample_count", 1)),
             "request_schema": endpoint.get("request_schema"),
             "response_schema": endpoint.get("response_schema"),
@@ -275,6 +277,12 @@ def merge_registry(
                 if k not in merged_qp:
                     merged_qp[k] = v
             old["query_params"] = merged_qp
+            # Issue #23: 表单体字段同样只增不改（向后兼容）
+            merged_body = dict(old.get("request_body_params") or {})
+            for k, v in (entry.get("request_body_params") or {}).items():
+                if k not in merged_body:
+                    merged_body[k] = v
+            old["request_body_params"] = merged_body
             if entry.get("description"):
                 old["description"] = entry["description"]
             if entry.get("request_schema"):

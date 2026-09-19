@@ -7,6 +7,7 @@ import re
 from typing import Any
 from urllib.parse import unquote_plus
 
+from .bodies import parse_form_urlencoded
 from .crypto_analyzer import value_shape
 
 
@@ -89,34 +90,13 @@ def redact_headers(headers: dict[str, str]) -> dict[str, str]:
     return result
 
 
-def _parse_form_urlencoded(payload: str) -> list[tuple[str, str]] | None:
-    """把 ``application/x-www-form-urlencoded`` 体解析为 [(字段名, 原样值)]。
-
-    不像表单编码时返回 None（此时调用方按原样保留）。
-    JSON / XML / HTML 体一律不当作表单，避免误伤。
-    """
-    if not payload or payload.lstrip()[:1] in ("{", "[", "<"):
-        return None
-    if "=" not in payload:
-        return None
-    pairs: list[tuple[str, str]] = []
-    for part in payload.split("&"):
-        if not part:
-            continue
-        if "=" not in part:
-            return None          # 出现非 k=v 段，不认作表单编码
-        name, value = part.split("=", 1)
-        pairs.append((name, value))
-    return pairs or None
-
-
 def _redact_form(payload: str) -> tuple[str, list[str], dict[str, dict]]:
     """表单编码体的脱敏，语义与 _redact_json 一致（值遮蔽 + 保留形态元数据）。
 
     修复前这里直接原样返回，导致**表单提交的明文密码被完整写进 capture.jsonl**
     （见 issue #22）。
     """
-    pairs = _parse_form_urlencoded(payload)
+    pairs = parse_form_urlencoded(payload)
     if pairs is None:
         return payload, [], {}
     out: list[str] = []

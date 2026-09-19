@@ -8,8 +8,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, unquote_plus, urlsplit
 
+from .bodies import parse_form_urlencoded
 from .crypto_analyzer import detect_password_encryption
 
 
@@ -765,6 +766,15 @@ def analyze_capture(
                 for key, value in parse_qsl(urlsplit(sample["request"].get("url", "")).query):
                     if value not in query_params[key]:
                         query_params[key].append(value)
+            # Issue #23: 表单编码请求体的字段同样要变成工具参数。传统 OA 系统 等
+            # 传统系统全靠 POST 体传参，此前只解析 JSON 体导致参数全丢——工具能连通
+            # 但缺参数必然业务报错（实测 "业务报错"）。
+            request_body_params: dict[str, list[str]] = defaultdict(list)
+            for sample in selected:
+                for name, raw_value in parse_form_urlencoded(sample["request"].get("postData")) or []:
+                    value = unquote_plus(raw_value)
+                    if value and value not in request_body_params[name]:
+                        request_body_params[name].append(value)
             endpoints.append({
                 "endpoint_id": endpoint_id,
                 "method": method,
@@ -775,6 +785,8 @@ def analyze_capture(
                 "single_sample": len(selected) < 2,
                 "auth_required": auth_required,
                 "query_params": {k: v for k, v in query_params.items()},
+                # Issue #23: 表单编码体字段的样本值 → 生成器据此出具名参数
+                "request_body_params": {k: v for k, v in request_body_params.items()},
                 "request_schema": _json_schema(request_body_values[0], request_body_values) if request_body_values else None,
                 "response_schema": _json_schema(response_values[0], response_values) if response_values else None,
                 # Issue #16: 响应非 JSON（页面/控件端点）→ 标记不删除，生成阶段默认跳过
@@ -831,6 +843,13 @@ def analyze_capture(
             keep["max_response_bytes"] = max(keep.get("max_response_bytes", 0), ep.get("max_response_bytes", 0))
             for k, v in (ep.get("query_params") or {}).items():
                 bucket = keep["query_params"].setdefault(k, [])
+                for val in v:
+                    if val not in bucket:
+                        bucket.append(val)
+            # Issue #23: 同构合并时表单体字段也要并入
+            keep_body = keep.setdefault("request_body_params", {})
+            for k, v in (ep.get("request_body_params") or {}).items():
+                bucket = keep_body.setdefault(k, [])
                 for val in v:
                     if val not in bucket:
                         bucket.append(val)
