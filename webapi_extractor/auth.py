@@ -36,6 +36,15 @@ def _secure_file(path: Path) -> None:
         pass
 
 
+def _cookie_key(cookie: dict[str, Any]) -> tuple[str, str, str]:
+    return (cookie.get("domain") or "", cookie.get("path") or "", cookie.get("name") or "")
+
+
+def _cookie_baseline(cookies: list[dict[str, Any]]) -> dict[tuple[str, str, str], Any]:
+    """Issue #20：登录前落下的 Cookie 基线（键 → 值），用于识别「登录后新出现」。"""
+    return {_cookie_key(cookie): cookie.get("value") for cookie in cookies}
+
+
 class _LoginFormParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -141,6 +150,10 @@ class LoginSession:
     context: Any = None
     task: asyncio.Task[Any] | None = None
     completed: asyncio.Event = field(default_factory=asyncio.Event)
+    # Issue #20: 首次导航后落下的 Cookie 基线（name/domain/path → value）。
+    # 登录证据必须相对它「新增或值变化」，否则登录页自设的 JSESSIONID /
+    # PHPSESSID 会被当成已登录证据，浏览器随即被关。
+    baseline_cookies: dict[tuple[str, str, str], Any] = field(default_factory=dict)
 
 
 class LoginManager:
@@ -175,6 +188,12 @@ class LoginManager:
                 # 这三层本就不依赖页内控制条，去掉后同时消除了对目标页面的脚本注入。
                 page = await record.context.new_page()
                 await page.goto(record.url, wait_until="domcontentloaded", timeout=30000)
+                # Issue #20: 登录页往往自己就设 JSESSIONID / PHPSESSID /
+                # PHPSESSID 这类会话 Cookie。先让页面沉降、把它们收进基线；此后
+                # 证据要求「相对基线新增或值变化」，登录页的 Cookie 便不再误触发
+                # （修复前会在 ~6 秒后误判 completed 并关掉浏览器）。
+                await page.wait_for_timeout(2000)
+                record.baseline_cookies = _cookie_baseline(await record.context.cookies())
 
                 # Layer 2 (backup): native OS dialog, fully outside the target page —
                 # immune to CSP / iframes / cross-origin popups that break in-page bars.
@@ -221,12 +240,26 @@ class LoginManager:
             record.auth_summary = {"error": f"{type(exc).__name__}: {exc}"}
 
     async def _login_evidence(self, record: LoginSession, page: Any, target_host: str) -> bool:
-        """Layer 1 evidence: a token-like cookie on the *target* site's domain,
-        while the browser has left any IdP and returned to the target site."""
+        """Layer 1 evidence: a credential-like cookie on the *target* site's domain
+        that appeared (or changed) **after** the pre-login baseline snapshot.
+
+        Issue #20: 只看「有没有名字像凭据的 Cookie」会误判——登录页自己就会设
+        JSESSIONID / PHPSESSID / PHPSESSID / ASP.NET_SessionId 之类。
+        必须要求它是登录后才出现、或值发生了变化，才算已登录的证据。
+        """
         cookies = await record.context.cookies()
+        baseline = record.baseline_cookies
+
+        def is_new_or_changed(cookie: dict[str, Any]) -> bool:
+            if not baseline:
+                # 尚未拍到基线（快照前的窗口期）→ 退回旧行为，避免误伤正常流程
+                return True
+            return baseline.get(_cookie_key(cookie)) != cookie.get("value")
+
         has_token_cookie = any(
             any(marker in (cookie.get("name") or "").lower() for marker in ("token", "session", "sid", "auth"))
             and same_site(cookie.get("domain") or "", target_host)
+            and is_new_or_changed(cookie)
             for cookie in cookies
         )
         on_target_site = target_host in (urlparse(page.url).hostname or "")
