@@ -822,9 +822,30 @@ def render_server(registry: dict) -> dict:
     if any(e.get("method") not in ("GET", "HEAD") for e in endpoints):
         lines += ["写操作工具标注 `[MUTATING]`，调用必须显式传 `confirm=true`，执行会记录到 audit.log。", ""]
     lines += ["## 鉴权说明", "", "按抓包实测的 scheme 生成：", ""]
+    auth_required_hosts = {e.get("host") for e in endpoints if e.get("auth_required")}
+    token_hosts: set = set()
     for h, info in sorted(hosts.items()):
-        lines.append(f"- `{h}`：{(info or {}).get('scheme') or '无（公开接口）'}")
-    lines += ["", f"- token 统一配置在 `.env` 的 `{prefix}_TOKEN`。"]
+        info = info or {}
+        scheme = info.get("scheme")
+        if scheme and scheme != "Cookie":
+            desc = scheme
+            token_hosts.add(h)
+        elif cookie_hosts.get(h):
+            # 纯 Cookie 鉴权站点（如传统 OA 系统）：scheme 为空**不等于**公开接口，
+            # 接口实测仍需登录后的 Cookie。这里若按 scheme 判会误报成「公开接口」。
+            desc = f"Cookie（{', '.join(cookie_hosts[h])}）"
+        elif h in auth_required_hosts:
+            desc = "需要鉴权（未识别出具体 scheme，请人工核对抓包）"
+        else:
+            desc = "无（公开接口）"
+        lines.append(f"- `{h}`：{desc}")
+    if token_hosts or not cookie_hosts:
+        lines += ["", f"- token 统一配置在 `.env` 的 `{prefix}_TOKEN`。"]
+    if cookie_hosts:
+        lines += ["", f"- Cookie 整串配置在 `.env` 的 `{prefix}_COOKIE_<HOST>`（分号分隔，推荐）；"
+                      "取值见 web-api-extractor 的 `auth_states/<site>.json`。"
+                      "Cookie 过期后重跑一次 `open_browser_login` 覆盖该文件即可，"
+                      "无需重建项目、无需重抓接口。"]
     if any((i or {}).get("scheme") == "Basic" for i in hosts.values()):
         lines += [f"- Basic 站点还需在 `.env` 填 `{prefix}_BASIC_PASSWORD_<HOST>`（base64 拼法中的 password 部分）。"
                   "它通常是前端 JS 里的固定字符串：在抓包会话的 scripts/ 目录搜 `btoa(` 或 `auth:{`，"
