@@ -24,7 +24,7 @@ from webapi_extractor.project import (
 )
 
 
-# 实际抓到的那条路径（crm.example.com，D365 OData 绑定函数）。
+# 实际抓到的那条路径（D365 OData 绑定函数，超长主因是复合函数名）。
 LONG_PATH = ("/api/data/v9.0/activitypointers/Microsoft.Dynamics.CRM."
              "RetrieveTimelineWallRecords(FetchXml=@xml,Target=@id,RollupType=@rollupType)")
 
