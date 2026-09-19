@@ -17,6 +17,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from .control_bar import LOGIN_CONTROL_BAR_JS
+from .domain import same_site
 from .redaction import is_auth_candidate
 
 
@@ -97,6 +98,22 @@ async def http_login(
             "site_key": _site_key(url),
             "created_at": _now(),
             "secrets": {"username": username, "password": password},
+            # 与 Playwright storage_state 对齐，保留 domain/path/secure。
+            # 多域 SSO 站点下同名 Cookie（如 .example.com 与 crm.example.com 各有一条
+            # SSOAuthSession）值不同，摊平成 {name: value} 会互相覆盖。
+            "cookies": [
+                {
+                    "name": cookie.name,
+                    "value": cookie.value,
+                    "domain": cookie.domain,
+                    "path": cookie.path,
+                    "secure": bool(cookie.secure),
+                    "expires": cookie.expires,
+                }
+                for cookie in cookies
+            ],
+            # 仅为兼容旧的下游消费者保留；**新代码请用上面的 cookies**——
+            # 它丢弃了域名维度，在多域站点上不准确。
             "cookies_raw": {cookie.name: cookie.value for cookie in cookies},
             "auth_candidates": [{"login_endpoint": f"POST {endpoint}"}],
             "token_response": token_data,
@@ -207,11 +224,9 @@ class LoginManager:
         """Layer 1 evidence: a token-like cookie on the *target* site's domain,
         while the browser has left any IdP and returned to the target site."""
         cookies = await record.context.cookies()
-        target_zone = ".".join(target_host.split(".")[-2:]) if target_host else ""
         has_token_cookie = any(
             any(marker in (cookie.get("name") or "").lower() for marker in ("token", "session", "sid", "auth"))
-            and target_zone
-            and target_zone in (cookie.get("domain") or "")
+            and same_site(cookie.get("domain") or "", target_host)
             for cookie in cookies
         )
         on_target_site = target_host in (urlparse(page.url).hostname or "")
