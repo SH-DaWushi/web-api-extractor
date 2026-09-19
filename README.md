@@ -49,6 +49,10 @@ powershell -ExecutionPolicy Bypass -File .\bootstrap.ps1
 # macOS / Linux
 bash ./bootstrap.sh
 ```
+```bash
+# 无 PowerShell/bash 的受限环境：纯 Python 引导
+python bootstrap.py
+```
 
 已装过环境，只做检查：
 
@@ -91,6 +95,10 @@ python mcp_call.py probe_login '{"url":"https://example.com/"}'
 | 加密 | `extract_crypto_logic` | 检测加密载荷并给出处理策略 |
 | 生成 | `generate_mcp_server` | 生成 registry 项目（多域名/类型化参数/实测鉴权） |
 | 迭代 | `diff_capture` / `merge_capture` / `regenerate_server` / `export_project` | 只读差异 / 确认合并（version+1）/ 从 registry 重生成 / 导出用户态分发包 |
+
+**生成的子 MCP 自带登录能力**（识别到账号密码登录接口时）：`login()` / `auth_status()`——凭据与 token 以 DPAPI 加密持久化，重启自动恢复，401 自动重登录；密码按前端实测策略加密传输（如 RSA-OAEP + 前端 JS 公钥）。
+
+**已知站点档案**：example 等站点自动应用语义化工具命名与中文描述（`webapi_extractor/site_profiles/`），其它站点走通用推导。
 
 ---
 
