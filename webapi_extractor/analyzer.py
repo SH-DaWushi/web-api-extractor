@@ -70,6 +70,92 @@ def _is_noise(host: str, path: str) -> bool:
     return any(re.search(p, path, re.I) for p in NOISE_PATH_PATTERNS)
 
 
+# --------------------------------------------------------------------------- #
+# Issue #12: 凭据 Cookie 判定
+#
+# 修复前 auth_required 只检查 Authorization 头与 auth_candidate，**完全没看 Cookie**。
+# 于是 CDP 能抓到 Cookie（#1 已修）后，判定仍全部为 False，
+# 生成的代码不带任何鉴权（实测 7 个工具全部 401）。
+#
+# 但也不能「见到 Cookie 就算需要鉴权」——埋点 Cookie（Application Insights 的
+# ai_user/ai_session、GA 的 _ga 等）几乎每个站点都有，会变成噪音。
+# 故按「疑似凭据」的命名特征判定，并显式排除已知埋点。
+# --------------------------------------------------------------------------- #
+_CREDENTIAL_COOKIE_MARKERS = (
+    "sess", "auth", "token", "sid", "login", "jwt", "ticket",
+    "sso", "credential", "remember", "signin",
+)
+
+# 已知埋点/分析类 Cookie，即使名字命中上面的特征也不算凭据
+_ANALYTICS_COOKIE_PATTERNS = (
+    re.compile(r"^ai_", re.I),            # Application Insights
+    re.compile(r"^_ga", re.I),            # Google Analytics
+    re.compile(r"^_gid$", re.I),
+    re.compile(r"^_gcl", re.I),
+    re.compile(r"^amplitude", re.I),
+    re.compile(r"^mp_", re.I),            # Mixpanel
+    re.compile(r"^hj", re.I),             # Hotjar
+    re.compile(r"^_clck|^_clsk", re.I),   # Clarity
+    re.compile(r"^optimizely", re.I),
+    re.compile(r"^_fbp$|^_fbc$", re.I),   # Facebook Pixel
+)
+
+
+def is_credential_cookie(name: str) -> bool:
+    """Cookie 名是否像会话凭据。
+
+    >>> is_credential_cookie("MSISAuth")
+    True
+    >>> is_credential_cookie("ai_session")   # Application Insights 埋点
+    False
+    >>> is_credential_cookie("ReqClientId")  # 设备标识，非凭据
+    False
+    """
+    if not name:
+        return False
+    if any(p.search(name) for p in _ANALYTICS_COOKIE_PATTERNS):
+        return False
+    low = name.lower()
+    return any(m in low for m in _CREDENTIAL_COOKIE_MARKERS)
+
+
+def credential_cookies_in(header_value: str) -> list[str]:
+    """从 Cookie 头值中挑出疑似凭据的名字。"""
+    found: list[str] = []
+    for part in (header_value or "").split(";"):
+        name = part.split("=", 1)[0].strip()
+        if is_credential_cookie(name) and name not in found:
+            found.append(name)
+    return found
+
+
+def _has_credential_cookie(headers: dict[str, Any]) -> bool:
+    """请求头里的 Cookie 是否含疑似凭据（Cookie 头名大小写不敏感）。"""
+    if not headers:
+        return False
+    for key, value in headers.items():
+        if str(key).lower() == "cookie" and value:
+            if credential_cookies_in(str(value)):
+                return True
+    return False
+
+
+def _request_needs_auth(request: dict[str, Any]) -> bool:
+    """单个请求是否携带了鉴权凭据。
+
+    三条判据（任一成立即视为需要鉴权）：
+      1. 显式 Authorization 头
+      2. 抓包阶段标记的 auth_candidate（登录接口、含密码字段等）
+      3. **请求携带疑似凭据的 Cookie**（Issue #12 新增）
+    """
+    headers = request.get("headers") or {}
+    if headers.get("Authorization") or headers.get("authorization"):
+        return True
+    if request.get("auth_candidate"):
+        return True
+    return _has_credential_cookie(headers)
+
+
 def _heavy_response_suggestion(
     sample_count: int,
     total_size: int,
@@ -487,7 +573,11 @@ def analyze_capture(
                     if parsed_value is not None:
                         values.append(parsed_value)
             endpoint_id = f"ep_{len(endpoints) + 1:03d}"
-            auth_required = any(sample["request"].get("headers", {}).get("Authorization") or sample["request"].get("auth_candidate") for sample in selected)
+            # Issue #12: 判定纳入凭据 Cookie（此前只看 Authorization 与 auth_candidate，
+            # 导致 CDP 抓到 Cookie 后仍判为无需鉴权）。
+            auth_required = any(
+                _request_needs_auth(sample["request"]) for sample in selected
+            )
             # Query-parameter samples across all captured URLs of this endpoint —
             # the generator turns these into typed function signatures.
             query_params: dict[str, list[str]] = defaultdict(list)

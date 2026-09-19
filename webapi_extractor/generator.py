@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .analyzer import is_credential_cookie
 from .project import (
     init_project,
     load_registry,
@@ -54,14 +55,45 @@ def _render_auth_block(prefix: str, hosts: dict) -> str:
     hosts_literal = json.dumps({h: f"https://{h}" for h in hosts}, indent=4, ensure_ascii=False)
     # repr() — NOT json.dumps — so None/null renders as a valid Python literal.
     scheme_literal = repr({h: (i or {}).get("scheme") for h, i in hosts.items()})
-    cookie_literal = repr({h: ((i or {}).get("cookie_names") or [None])[0] for h, i in hosts.items()})
+    # Issue #12: 携带**全部**凭据 Cookie，而非只取第一个。
+    # Cookie 鉴权是集合语义——实测单独带设备标识类 Cookie 返回 401，
+    # 必须整套会话 Cookie 一起发送。埋点类（ai_*/_ga 等）已过滤。
+    cookie_literal = repr({
+        h: [n for n in ((i or {}).get("cookie_names") or []) if is_credential_cookie(n)]
+        for h, i in hosts.items()
+    })
     return (
         "\nHOSTS = " + hosts_literal +
         "\nAUTH_SCHEME = " + scheme_literal +
-        "\nCOOKIE_NAME = " + cookie_literal + """
+        "\nCREDENTIAL_COOKIES = " + cookie_literal + """
 
 def _HK(host: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "_", host.upper()).strip("_")
+
+
+def _cookie_values(host: str, names: list) -> dict:
+    \"\"\"按 cookie 名收集运行时值。支持两种配置方式：
+
+      * 整串：__PREFIX___COOKIE_<HOST>='a=1; b=2'（分号分隔，推荐）
+      * 逐条：__PREFIX___COOKIE_<HOST>_<NAME>=<value>
+
+    整串形式便于直接填入从登录态文件读到的 Cookie。
+    \"\"\"
+    jar: dict = {}
+    blob = os.environ.get("__PREFIX___COOKIE_" + _HK(host), "")
+    if blob:
+        for part in blob.split(";"):
+            part = part.strip()
+            if "=" in part:
+                k, v = part.split("=", 1)
+                jar[k.strip()] = v.strip()
+    for name in names or []:
+        env_key = ("__PREFIX___COOKIE_" + _HK(host) + "_"
+                   + re.sub(r"[^A-Z0-9]+", "_", str(name).upper()))
+        val = os.environ.get(env_key)
+        if val:
+            jar[name] = val
+    return jar
 
 
 def _auth_headers(host: str) -> dict:
@@ -77,9 +109,14 @@ def _auth_headers(host: str) -> dict:
         return {"Authorization": "Basic " + base64.b64encode(raw).decode("ascii")}
     if scheme == "Bearer":
         return {"Authorization": "Bearer " + token} if token else {}
-    cookie = COOKIE_NAME.get(host)
-    if cookie and token:
-        return {"Cookie": cookie + "=" + token}
+    # Cookie 鉴权：发送整组凭据 Cookie（单发一个往往 401）
+    jar = _cookie_values(host, CREDENTIAL_COOKIES.get(host))
+    if jar:
+        return {"Cookie": "; ".join(k + "=" + v for k, v in jar.items())}
+    # 回退：单一 token（兼容只配了 __PREFIX___TOKEN 的旧场景）
+    names = CREDENTIAL_COOKIES.get(host) or []
+    if names and token:
+        return {"Cookie": names[0] + "=" + token}
     return {}
 """.replace("__PREFIX__", prefix))
 
@@ -609,10 +646,37 @@ def render_server(registry: dict) -> dict:
         req += "cryptography>=42\n"
     files["requirements.txt"] = req
     env_lines = [f"# {site_name} MCP 配置。复制为 .env 后填写。",
-                 f"# 登录 token（多数站点取自浏览器 localStorage/cookie，获取方法见 README）。",
-                 f"{prefix}_TOKEN=",
                  f"# 请求超时（秒）",
                  f"{prefix}_TIMEOUT=30"]
+
+    # Cookie 鉴权：按 host 给出该站实际观测到的凭据 Cookie 名，并说明填法
+    cookie_hosts = {h: [n for n in ((info or {}).get("cookie_names") or [])
+                        if is_credential_cookie(n)]
+                    for h, info in (hosts or {}).items()}
+    cookie_hosts = {h: n for h, n in cookie_hosts.items() if n}
+    if cookie_hosts:
+        env_lines += [
+            "# ── Cookie 鉴权 ──────────────────────────────────────────────",
+            "# 抓到该站使用 Cookie 鉴权。填**整串**（分号分隔）最省事，",
+            "# 值可在 web-api-extractor 的 auth_states/<site>.json 里找到。",
+        ]
+        for h, names in sorted(cookie_hosts.items()):
+            env_lines += [
+                f"# {h} 需要的 Cookie: {', '.join(names)}",
+                f'{prefix}_COOKIE_{_host_key(h)}="name1=value1; name2=value2"',
+            ]
+        env_lines += [
+            "# 也可逐条填写：",
+            *[f"# {prefix}_COOKIE_{_host_key(h)}_{re.sub(r'[^A-Z0-9]+', '_', n.upper())}=<value>"
+              for h, names in sorted(cookie_hosts.items()) for n in names[:2]],
+            "",
+        ]
+    else:
+        env_lines += [
+            f"# 登录 token（站点未观测到 Cookie 鉴权时才需要）",
+            f"{prefix}_TOKEN=",
+        ]
+
     if auth_login:
         env_lines += [
             "# 账号密码登录（推荐留空：调用一次 login(account,password) 后凭据与 token",
