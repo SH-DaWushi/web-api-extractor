@@ -484,6 +484,35 @@ def _load_dotenv() -> None:
 
 _load_dotenv()
 
+
+# --------------------------------------------------------------------------- #
+# httpx 兼容性：清洗 NO_PROXY 中的方括号 IPv6 字面量（如 [::1]）。
+#
+# httpx 在**构造客户端**时就会解析 NO_PROXY；遇到 [::1] 直接抛
+#   InvalidURL: Invalid port: ':1]'
+# 客户端因此根本建不起来 —— 即使请求根本不经过代理。裸 ::1 无此问题。
+# 剥掉方括号即修复，同时保留代理能力（需经代理访问目标站的环境不受影响）。
+#
+# 注：本文件是独立部署单元，不依赖 webapi_extractor 包，故此处内联实现
+# （包内等价实现见 webapi_extractor/proxy_env.py）。
+# --------------------------------------------------------------------------- #
+def _sanitize_no_proxy() -> None:
+    for var in ("NO_PROXY", "no_proxy"):
+        raw = os.environ.get(var)
+        if not raw or "[" not in raw:
+            continue
+        parts = []
+        for part in raw.split(","):
+            entry = part.strip()
+            if len(entry) >= 2 and entry.startswith("[") and entry.endswith("]"):
+                entry = entry[1:-1].strip()
+            if entry:
+                parts.append(entry)
+        os.environ[var] = ",".join(parts)
+
+
+_sanitize_no_proxy()
+
 TOKEN = os.environ.get("__PREFIX___TOKEN", "").strip()
 TIMEOUT = float(os.environ.get("__PREFIX___TIMEOUT", "30"))
 AUDIT_PATH = _HERE / "audit.log"

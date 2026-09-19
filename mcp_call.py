@@ -71,7 +71,12 @@ def main():
         post(client, {"jsonrpc": "2.0", "method": "notifications/initialized"}, new_sid)
         return new_sid
 
-    with httpx.Client(timeout=300) as client:
+    # trust_env=False：本客户端只连 127.0.0.1 回环地址，不该走任何代理——
+    # 这比「清洗 NO_PROXY」更彻底。若放任 trust_env=True，httpx 会在**构造
+    # 阶段**解析环境代理变量，遇到 NO_PROXY 含方括号 IPv6 字面量（Cherry
+    # Studio 默认写入的 `...,::1,...,[::1]`）会直接抛
+    # InvalidURL: Invalid port: ':1]'，客户端根本没建起来——即使请求压根不经过代理。
+    with httpx.Client(timeout=300, trust_env=False) as client:
         if not sid:
             sid = initialize(client)
         resp, _ = post(client, {

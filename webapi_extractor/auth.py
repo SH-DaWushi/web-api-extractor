@@ -17,6 +17,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from .domain import same_site
+from .proxy_env import sanitize_no_proxy
 from .redaction import is_auth_candidate
 
 
@@ -63,6 +64,10 @@ async def http_login(
     login_endpoint: str | None = None,
 ) -> dict[str, Any]:
     """Try a JSON endpoint first when known, then fall back to an HTML form."""
+    # 构造客户端前清洗 NO_PROXY：httpx 解析方括号 IPv6（[::1]）会抛
+    # InvalidURL: Invalid port ':1]'，客户端在构造阶段就崩——与是否走代理无关。
+    # 详见 proxy_env 模块说明。
+    sanitize_no_proxy()
     async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
         endpoint = login_endpoint or url
         payload: dict[str, Any] = {"username": username, "password": password}
