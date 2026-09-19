@@ -18,7 +18,11 @@ ROOT = Path(__file__).resolve().parent
 def main() -> int:
     do_install = "--install" in sys.argv[1:]
     venv_dir = ROOT / ".venv"
-    venv_py = venv_dir / ("Scripts" / "python.exe" if sys.platform == "win32" else "bin" / "python")
+    # 注意：不能写成 Path / ("Scripts" / "python.exe" if ...)——括号内先求值的是
+    # 字符串除法，Windows 下必抛 TypeError。必须分开拼接。
+    venv_bin = "Scripts" if sys.platform == "win32" else "bin"
+    venv_exe = "python.exe" if sys.platform == "win32" else "python"
+    venv_py = venv_dir / venv_bin / venv_exe
 
     print(">> [1/4] 创建虚拟环境 .venv（隔离全局 site-packages）")
     if not venv_py.exists():
