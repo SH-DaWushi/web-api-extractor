@@ -552,12 +552,30 @@ def _is_json_content_type(content_type: str | None) -> bool:
     return media in {"application/json", "text/json"} or media.endswith("+json")
 
 
-def _non_json_response(responses: list[dict[str, Any]]) -> bool:
-    """Issue #16：端点样本的响应是否「非 JSON」（页面/控件端点）。
+def _looks_like_json_body(raw: Any) -> bool:
+    """响应体是否是 JSON（严格解析，不是「首字符像」就算）。"""
+    if not isinstance(raw, str) or not raw.strip():
+        return False
+    if raw.lstrip()[:1] not in ("{", "["):
+        return False
+    try:
+        json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return False
+    return True
 
-    判定保守：只要任一响应头是 JSON，就视为数据接口、不标记（避免把偶尔返回
-    HTML 错误页的正常接口误杀）；反之，若观察到非 JSON 响应头或 3xx 重定向、
-    且无任何 JSON 证据，则标记。仅标记不删除，保留人工复核权。
+
+def _non_json_response(responses: list[dict[str, Any]],
+                       bodies: list[Any] | None = None) -> bool:
+    """Issue #16 / #19：端点样本的响应是否「非 JSON」（页面/控件端点）。
+
+    Issue #19：判定必须**同时看响应体**。大量 Java / 遗留系统（传统 OA 系统 等）
+    用 ``Content-Type: text/plain`` 返回 JSON 体，只看响应头会把这类站点的接口
+    整体误杀——实测 大量端点被砍到 3 个。
+
+    判定仍保守：任一响应头是 JSON，**或任一响应体能解析为 JSON**，即视为数据接口、
+    不标记。反之，观察到非 JSON 响应头或 3xx 重定向、且全无 JSON 证据才标记。
+    仅标记不删除，保留人工复核权。
     """
     saw_json = False
     saw_non_json = False
@@ -571,6 +589,9 @@ def _non_json_response(responses: list[dict[str, Any]]) -> bool:
         status = response.get("status")
         if isinstance(status, int) and 300 <= status < 400:
             saw_non_json = True
+    for raw in bodies or []:
+        if _looks_like_json_body(raw):
+            saw_json = True
     return saw_non_json and not saw_json
 
 
@@ -757,7 +778,10 @@ def analyze_capture(
                 "request_schema": _json_schema(request_body_values[0], request_body_values) if request_body_values else None,
                 "response_schema": _json_schema(response_values[0], response_values) if response_values else None,
                 # Issue #16: 响应非 JSON（页面/控件端点）→ 标记不删除，生成阶段默认跳过
-                "non_json_response": _non_json_response([s["response"] for s in selected]),
+                # Issue #19: 判定同时看响应体（text/plain 返回 JSON 的接口不该被误杀）
+                "non_json_response": _non_json_response(
+                    [s["response"] for s in selected],
+                    [s["body"].get("body") for s in selected]),
                 "description": None,
                 "notes": None,
                 "param_name_guessed": bool(item.parameter_names),
