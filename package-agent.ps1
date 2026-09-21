@@ -4,18 +4,30 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
-$outputPath = Join-Path $root $Output
+# 绝对路径直接用；Join-Path 会把 "D:\repo" + "C:\out\x.zip" 拼成一个坏路径。
+$outputPath = if ([System.IO.Path]::IsPathRooted($Output)) { $Output } else { Join-Path $root $Output }
 $staging = Join-Path ([System.IO.Path]::GetTempPath()) ("web-api-extractor-package-" + [guid]::NewGuid().ToString("N"))
 
 try {
     New-Item -ItemType Directory -Path $staging | Out-Null
+    # 这是**技能导入包**：必须是自足的——runbook/00 让 Agent 跑 bootstrap 与
+    # start_server.py / mcp_call.py，SKILL.md 的硬规则也要求用 start_server.py。
+    # 这些文件此前漏在列表外，打出来的 zip 导入后按手册走会直接找不到脚本。
     $include = @(
         "pyproject.toml",
         "requirements.txt",
         "README.md",
         "SKILL.md",
+        "docs",
         "runbook",
+        "LICENSE",
+        "bootstrap.py",
+        "bootstrap.ps1",
+        "bootstrap.sh",
         "install-agent.ps1",
+        "start_server.py",
+        "run_http.py",
+        "mcp_call.py",
         ".vscode",
         "webapi_extractor",
         "tests"
