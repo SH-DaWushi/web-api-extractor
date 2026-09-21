@@ -361,3 +361,149 @@ class TestCaptureDoesNotAutoStart:
         session, _, _ = await self._run_monitor(monkeypatch, PRE_AUTH)
 
         assert session.metadata()["auth_evidence"] is True
+
+
+# --------------------------------------------------------------------------- #
+# 4. 抓包环节的弹窗兜底：与 confirm_login_ready 等价，语义与登录环节一致
+# --------------------------------------------------------------------------- #
+def _capture(status: str = "authenticating") -> CaptureSession:
+    session = CaptureSession("probe", URL, store=None, response_limit=1, idle_timeout=9999)
+    session.status = status
+    return session
+
+
+def _patch_capture_dialog(monkeypatch, answer):
+    """替换 CaptureSession._ask_native，返回调用记录（用于断言「没弹」）。"""
+    calls = []
+
+    def _fake(self):
+        calls.append(1)
+        return answer
+
+    monkeypatch.setattr(CaptureSession, "_ask_native", _fake)
+    return calls
+
+
+class TestCaptureConfirmDialog:
+    async def test_yes_starts_capturing(self, monkeypatch):
+        session = _capture()
+        _patch_capture_dialog(monkeypatch, True)
+
+        result = await session.request_confirm_dialog()
+
+        assert result["success"] is True
+        assert result["confirmed"] is True
+        assert session.status == "capturing"
+
+    async def test_no_keeps_authenticating_and_is_reusable(self, monkeypatch):
+        """「否」不丢弃：停在 authenticating，且可以再次请求弹出。"""
+        session = _capture()
+        _patch_capture_dialog(monkeypatch, False)
+
+        first = await session.request_confirm_dialog()
+
+        assert first["confirmed"] is False
+        assert session.status == "authenticating"
+        assert session.dialog_open is False, "必须复位，否则对话框再也弹不出来"
+
+        _patch_capture_dialog(monkeypatch, True)
+        second = await session.request_confirm_dialog()
+        assert second["confirmed"] is True
+        assert session.status == "capturing"
+
+    async def test_refuses_when_not_authenticating(self, monkeypatch):
+        session = _capture(status="capturing")
+        calls = _patch_capture_dialog(monkeypatch, True)
+
+        result = await session.request_confirm_dialog()
+
+        assert result["success"] is False
+        assert result["error"] == "not_authenticating"
+        assert calls == [], "不该弹出必然变成死物的对话框"
+
+    async def test_refuses_when_dialog_already_open(self, monkeypatch):
+        session = _capture()
+        session.dialog_open = True
+        calls = _patch_capture_dialog(monkeypatch, True)
+
+        result = await session.request_confirm_dialog()
+
+        assert result["error"] == "dialog_already_open"
+        assert calls == []
+
+    async def test_dialog_unavailable_keeps_waiting_and_stays_reusable(self, monkeypatch):
+        session = _capture()
+        _patch_capture_dialog(monkeypatch, None)
+
+        result = await session.request_confirm_dialog()
+
+        assert result["error"] == "dialog_unavailable"
+        assert session.status == "authenticating"
+        assert session.dialog_open is False
+
+    async def test_browser_closed_while_dialog_open_is_not_resurrected(self, monkeypatch):
+        """对话框开着时用户直接关掉浏览器 → 不能把已收尾的会话翻回去记录。"""
+        session = _capture()
+
+        def _close_then_yes(self):
+            session.status = "stopped"  # 模拟 _on_browser_closed 已收尾
+            return True
+
+        monkeypatch.setattr(CaptureSession, "_ask_native", _close_then_yes)
+
+        result = await session.request_confirm_dialog()
+
+        assert result["success"] is False
+        assert result["error"] == "session_no_longer_authenticating"
+        assert session.status == "stopped"
+
+
+# --------------------------------------------------------------------------- #
+# 5. 两份实现不得再次分叉
+# --------------------------------------------------------------------------- #
+class TestDialogIsShared:
+    """登录与抓包必须共用 `dialog` 模块。
+
+    上一轮的教训正在于此：`auth.py` 与 `capture.py` 各写了一份登录判定，
+    Issue #20 只修了其中一份，另一份长期静默跑偏。平台相关的对话框代码同理，
+    不许再复制第二份。
+    """
+
+    def test_both_sides_use_the_same_module(self):
+        import webapi_extractor.auth as auth_module
+        import webapi_extractor.capture as capture_module
+
+        assert auth_module.dialog is capture_module.dialog
+
+    def test_platform_code_lives_only_in_the_dialog_module(self):
+        for cls in (LoginManager, CaptureSession):
+            source = inspect.getsource(cls)
+            assert "MessageBoxW" not in source, f"{cls.__name__} 不应内嵌平台实现"
+            assert "tkinter" not in source, f"{cls.__name__} 不应内嵌平台实现"
+
+    async def test_ask_yes_no_async_returns_the_thread_result(self, monkeypatch):
+        from webapi_extractor import dialog
+
+        monkeypatch.setattr(dialog, "ask_yes_no", lambda prompt, title=None: True)
+
+        assert await dialog.ask_yes_no_async("x") is True
+
+    async def test_run_blocking_does_not_block_the_event_loop(self):
+        """阻塞函数必须跑在 daemon 线程上，事件循环要能继续调度。"""
+        import time as _time
+
+        from webapi_extractor import dialog
+
+        ticks: list[int] = []
+
+        async def ticker():
+            for _ in range(3):
+                await asyncio.sleep(0.02)
+                ticks.append(1)
+
+        task = asyncio.create_task(ticker())
+        result = await dialog.run_blocking(lambda: (_time.sleep(0.08), "done")[1])
+        await task
+
+        assert result == "done"
+        assert len(ticks) == 3, "阻塞期间事件循环被卡住了"

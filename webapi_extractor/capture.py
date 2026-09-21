@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from . import dialog
 from .domain import same_site
 from .redaction import is_auth_candidate, redact_headers, redact_payload
 from .storage import SessionStore, utc_now
@@ -32,6 +33,12 @@ def _merge_headers(base: dict[str, Any] | None, extra: dict[str, Any] | None) ->
 
 
 class CaptureSession:
+    _CONFIRM_PROMPT = (
+        "已在浏览器里完成登录？\n\n"
+        "是 = 开始记录抓包\n"
+        "否 = 还没登好（浏览器保持打开）"
+    )
+
     def __init__(self, session_id: str, url: str, store: SessionStore, response_limit: int, idle_timeout: int, auth_state_path: str | None = None) -> None:
         self.session_id = session_id
         self.url = url
@@ -44,6 +51,8 @@ class CaptureSession:
         # 仅上报：目标域上是否出现名字像凭据的 Cookie。**不驱动状态流转**——
         # 何时开始记录只由显式确认决定（confirm_login_ready）。
         self.auth_evidence = False
+        # 确认对话框是否正在显示：用于拒绝重复弹出。
+        self.dialog_open = False
         self.stop_reason: str | None = None
         self.pause_reason: str | None = None
         self.endpoint_count = 0
@@ -182,6 +191,48 @@ class CaptureSession:
                 )
             except Exception:
                 pass
+
+    async def request_confirm_dialog(self) -> dict[str, Any]:
+        """按需弹出系统确认对话框，用户点「是」才开始记录。
+
+        与 ``confirm_login_ready`` 等价，只是把「问用户」这一步交给系统对话框，
+        供 Agent 不便在对话里询问时使用（例如用户要求用弹窗）。语义与登录环节
+        ``LoginManager.request_confirm_dialog`` 保持一致：
+
+        * 只在调用方明确请求时弹出；
+        * 「否」不丢弃——会话保持 ``authenticating``，可再次请求弹出；
+        * 已不在等待登录态的会话直接拒绝，不弹出必然变成死物的对话框。
+        """
+        if self.status != "authenticating":
+            return {"success": False, "error": "not_authenticating", "status": self.status,
+                    "message": "会话已不在等待登录态，不会弹出会变成死物的对话框。"}
+        if self.dialog_open:
+            return {"success": False, "error": "dialog_already_open", "status": self.status}
+
+        self.dialog_open = True
+        try:
+            answer = await dialog.run_blocking(self._ask_native)
+        finally:
+            self.dialog_open = False
+
+        if answer is None:
+            return {"success": False, "error": "dialog_unavailable", "status": self.status,
+                    "message": "无法显示系统对话框，请在对话里直接向用户确认后调用 confirm_login_ready。"}
+        if not answer:
+            return {"success": True, "confirmed": False, "status": self.status,
+                    "message": "用户表示还没登录完成；浏览器保持打开，可稍后再次请求确认。"}
+        # 对话框开着的时候用户可能直接关掉了浏览器（_on_browser_closed 已收尾），
+        # 此时不能把已结束的会话翻回去继续记录。
+        if self.status != "authenticating":
+            return {"success": False, "error": "session_no_longer_authenticating",
+                    "status": self.status, "stop_reason": self.stop_reason}
+        await self._enter_capturing()
+        return {"success": True, "confirmed": True, "session_id": self.session_id,
+                "status": self.status}
+
+    def _ask_native(self) -> bool | None:
+        """弹出阻塞式确认对话框（与登录环节共用 dialog 模块的实现）。"""
+        return dialog.ask_yes_no(self._CONFIRM_PROMPT, dialog.DEFAULT_TITLE)
 
     async def attach_page(self, page: Any) -> None:
         if page in self.pages:

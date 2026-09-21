@@ -6,7 +6,6 @@ import asyncio
 import json
 import os
 import secrets
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -16,6 +15,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from . import dialog
 from .domain import same_site
 from .proxy_env import sanitize_no_proxy
 from .redaction import is_auth_candidate
@@ -275,54 +275,17 @@ class LoginManager:
         return has_token_cookie and on_target_site
 
     _CONFIRM_PROMPT = "已完成网站登录？\n\n是 = 登录完成，保存登录态\n否 = 还没登好（浏览器保持打开）"
-    _CONFIRM_TITLE = "WebAPIExtractor 登录确认"
 
     def _ask_native(self) -> bool | None:
-        """Show a blocking OS-native Yes/No dialog. Returns True/False, or None when
-        no dialog could be shown (headless host, unsupported platform)."""
-        try:
-            if sys.platform == "win32":
-                import ctypes
+        """弹出阻塞式系统确认对话框（实现见 `dialog` 模块，与抓包环节共用）。
 
-                # 4 = Yes/No, 0x20 = question icon, 0x40000 = topmost。
-                answer = ctypes.windll.user32.MessageBoxW(
-                    0, self._CONFIRM_PROMPT, self._CONFIRM_TITLE, 4 | 0x20 | 0x40000
-                )
-                if answer == 6:  # IDYES
-                    return True
-                if answer == 7:  # IDNO
-                    return False
-                return None
-            import tkinter as tk
-            from tkinter import messagebox
-
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes("-topmost", True)
-            try:
-                return bool(messagebox.askyesno(self._CONFIRM_TITLE, self._CONFIRM_PROMPT))
-            finally:
-                root.destroy()
-        except Exception:
-            return None
+        返回 True/False；无法显示对话框时返回 None（无图形环境等）。
+        """
+        return dialog.ask_yes_no(self._CONFIRM_PROMPT)
 
     async def _ask_native_async(self) -> bool | None:
-        """Run the blocking dialog on a daemon thread so a never-answered dialog
-        cannot hold up event-loop shutdown (a non-daemon executor thread can)."""
-        import threading
-
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future[bool | None] = loop.create_future()
-
-        def _worker() -> None:
-            answer = self._ask_native()
-            try:
-                loop.call_soon_threadsafe(lambda: None if future.done() else future.set_result(answer))
-            except RuntimeError:
-                pass  # loop already closed — nobody is waiting any more
-
-        threading.Thread(target=_worker, daemon=True, name="wae-login-confirm").start()
-        return await future
+        """在线程上跑阻塞对话框，便于在协程里 await 用户的点选。"""
+        return await dialog.run_blocking(self._ask_native)
 
     async def request_confirm_dialog(self, session_id: str) -> dict[str, Any]:
         """按需弹出系统确认对话框，并把用户的点选结果**原样返回**。

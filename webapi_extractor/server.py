@@ -307,7 +307,7 @@ async def request_login_confirm_dialog(login_session_id: str) -> dict[str, Any]:
 async def confirm_login_ready(session_id: str) -> dict[str, Any]:
     """放行开始记录：Agent 问过用户、用户确认已登录后再调。
 
-    会话从 authenticating 翻到 capturing。**这是唯一放行方式**——登录旁证
+    会话从 authenticating 翻到 capturing。**这是主放行方式**——登录旁证
     （get_capture_status 的 auth_evidence）不会自动放行。
     """
     capture = capture_sessions.get(session_id)
@@ -318,6 +318,23 @@ async def confirm_login_ready(session_id: str) -> dict[str, Any]:
     await capture._enter_capturing()
     store.write_metadata(session_id, capture.metadata())
     return {"success": True, "session_id": session_id, "status": capture.status}
+
+
+@mcp.tool()
+@audited
+async def request_capture_confirm_dialog(session_id: str) -> dict[str, Any]:
+    """可选兜底：弹出系统对话框让用户点选「是/否」，是则开始记录。
+
+    与 `confirm_login_ready` 等价，只是把「问用户」交给系统对话框，供 Agent
+    不便在对话里询问时使用。点「否」不丢弃——会话保持等待，可再次调用
+    （对话框可重复弹出）。调用会阻塞到用户作答为止。会话已结束时会被拒绝。
+    """
+    capture = capture_sessions.get(session_id)
+    if capture is None:
+        return {"success": False, "error": "capture_session_not_found", "session_id": session_id}
+    result = await capture.request_confirm_dialog()
+    store.write_metadata(session_id, capture.metadata())
+    return result
 
 
 # --------------------------------------------------------------------------- #
