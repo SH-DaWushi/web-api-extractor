@@ -16,7 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-REQUIRED = ["fastmcp", "httpx", "jinja2", "playwright"]
+REQUIRED = ["fastmcp", "httpx", "playwright"]
 HTTP_PORT = 8422
 
 OK = "[ OK ]"
