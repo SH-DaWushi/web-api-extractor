@@ -21,7 +21,7 @@ from typing import Any, Callable
 
 # 域名关键词 -> 档案模块名（小写）
 _REGISTRY: dict[str, str] = {
-    "example": "example",
+    "jtest": "jtest",
 }
 
 # 已加载档案缓存
