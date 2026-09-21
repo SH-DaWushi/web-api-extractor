@@ -29,6 +29,8 @@ install_method: upload
 - **步骤 5 不可跳过**：抓包里的凭据值必然被脱敏为 `***`，明文/密文不可区分，禁止假设，必须核实。
 - **登录完成必须由用户确认**：`open_browser_login` 后先问用户是否已登录完成，得到答复再调
   `confirm_login`；抓包未带 `auth_state_path` 时，问用户后再调 `confirm_login_ready`。
+  不便在对话里问时，改用 `request_login_confirm_dialog` / `request_capture_confirm_dialog`
+  弹系统对话框让用户点选（点「否」不丢弃，可再次弹出）。
   工具返回的 `auth_evidence` 只是旁证，**不得据此自行判定并往下走**——用户确认前不要开始抓包或分析。
 - **启动服务务必用 `start_server.py`**，不要直接在宿主 shell 后台跑 `run_http.py`（否则浏览器「打开后立刻消失」）。
 
