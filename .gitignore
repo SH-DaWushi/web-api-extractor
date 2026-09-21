@@ -1,10 +1,51 @@
+# ── Python ──────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 *.egg-info/
-.mcp_session
 .venv/
-*.bak
-# start_server.py 的运行产物（PID 与日志），不入库
+dist/
+build/
+
+# ── 本地环境与凭据 ───────────────────────────────────────────────────────
+# README 让用户在工作根建 .env；生成的子项目也会写自己的 .env
+.env
+# 用 uv 临时跑测试/脚本时生成；本项目的正式流程走 bootstrap + requirements.txt
+uv.lock
+
+# ── 运行产物 ────────────────────────────────────────────────────────────
+# mcp_call.py 的会话缓存
+.mcp_session
+# mcp_call.py 的 @args.json 相对 CWD 解析，会落在仓库根
+args.json
+# start_server.py 的运行产物（PID 与日志）；*.log 兼顾其它名字（如早期的 http_server.log）
 .server_pid
-server.log
+*.log
+audit.log
+error.log
+# 生成的子项目写出的加密凭据缓存，绝对不该入库
+token_cache.bin
+cred_cache.bin
+
+# ── 打包产物 ────────────────────────────────────────────────────────────
+# package-agent.ps1 默认把 zip 写到仓库根（历史上误提交过一次）
+*.zip
+# generator.py 重出文件时留的备份
+*.bak
+
+# ── IDE / 编辑器 ────────────────────────────────────────────────────────
+# .qoder/ 曾一次误提 31 个索引文件，IDE 再跑还会生成
+.qoder/
+.idea/
+.claude/
+*.orig
+*.rej
+
+# ── 临时与实验目录 ──────────────────────────────────────────────────────
+# issues/ 下曾提交过复现脚本
+issues/
+tmp_capture_sessions/
+.DS_Store
+Thumbs.db

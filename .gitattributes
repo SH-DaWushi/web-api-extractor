@@ -1,0 +1,7 @@
+# 行尾策略。缺了它时 `git ls-files --eol` 全部是 `i/lf w/crlf attr/`：
+# Windows 上 bootstrap.sh 会被检出成 CRLF，`#!/usr/bin/env bash\r` 无法执行，
+# 而 README 恰好让用户跑 `bash ./bootstrap.sh`。
+*.sh text eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
