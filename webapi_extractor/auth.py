@@ -149,11 +149,18 @@ class LoginSession:
     browser: Any = None
     context: Any = None
     task: asyncio.Task[Any] | None = None
-    completed: asyncio.Event = field(default_factory=asyncio.Event)
     # Issue #20: 首次导航后落下的 Cookie 基线（name/domain/path → value）。
     # 登录证据必须相对它「新增或值变化」，否则登录页自设的 JSESSIONID /
     # PHPSESSID 会被当成已登录证据，浏览器随即被关。
     baseline_cookies: dict[tuple[str, str, str], Any] = field(default_factory=dict)
+    # 仅供报告：是否观察到看似登录成功的凭据证据。
+    # **不驱动状态流转**——完成一律由用户/Agent 显式确认（confirm_login 或确认对话框）。
+    # 自动判定曾在用户还在输密码时就把会话判成 completed 并关掉浏览器，
+    # Agent 据此往下跑（Issue: 登录阶段自动放行）。
+    auth_evidence: bool = False
+    # 确认对话框是否正在显示：既用于拒绝重复弹出，也用于在弹窗期间暂停会话超时，
+    # 避免「用户点了『是』但会话早已超时」造成的死弹窗。
+    dialog_open: bool = False
 
 
 class LoginManager:
@@ -170,10 +177,13 @@ class LoginManager:
             "login_session_id": session_id,
             "status": "waiting",
             "message": (
-                "浏览器已打开，请完成登录。登录完成的判定（三层，自动进行）："
-                "① 检测到目标站点的 token/session Cookie 并稳定 5 秒 → 自动完成；"
-                "② 弹出的系统对话框点「是」；"
-                "③ 60 秒后状态变为 waiting_user_confirm，由 Agent 询问用户后调用 confirm_login 确认。"
+                "浏览器已打开。请让用户在窗口里完成登录（验证码 / 二次验证 / SSO 都由用户完成），"
+                "**然后由用户确认是否已登录完成**：用户在对话里确认后，调用 "
+                "confirm_login(login_session_id) 保存登录态。"
+                "get_login_status 返回的 auth_evidence 只是旁证，**不会自动放行**——"
+                "务必等用户确认，不要在用户尚未答复时自行往下走。"
+                "若对话里问不方便，可用 request_login_confirm_dialog(login_session_id) "
+                "弹出系统对话框让用户点选。"
             ),
         }
 
@@ -195,44 +205,41 @@ class LoginManager:
                 await page.wait_for_timeout(2000)
                 record.baseline_cookies = _cookie_baseline(await record.context.cookies())
 
-                # Layer 2 (backup): native OS dialog, fully outside the target page —
-                # immune to CSP / iframes / cross-origin popups that break in-page bars.
-                self._spawn_native_confirm(record)
-
                 target_host = urlparse(record.url).hostname or ""
                 loop = asyncio.get_running_loop()
-                started = loop.time()
-                deadline = started + record.timeout_seconds
-                evidence_since: float | None = None
-                no_evidence_confirm_at = started + 60  # after this, agent may confirm out-of-band
+                deadline = loop.time() + record.timeout_seconds
 
-                while record.status in {"waiting", "waiting_user_confirm"} and loop.time() < deadline:
+                # **只观察，不判定。** 证据只写进 auth_evidence 供上报告知；
+                # 状态一律由显式确认翻转（confirm_login 工具，或用户点确认对话框）。
+                # 以前这里在证据稳定 5 秒后自动置 completed 并关掉浏览器——
+                # 而登录页自己就会设 session 类 Cookie，于是用户还在输密码，
+                # Agent 就已经拿到 completed 往下跑了。
+                while record.status == "waiting":
+                    if record.dialog_open:
+                        # 对话框显示期间暂停计时：否则用户还没点，会话先超时，
+                        # 之后再点「是」就成了死弹窗。
+                        deadline = loop.time() + record.timeout_seconds
+                    elif loop.time() >= deadline:
+                        break
                     try:
-                        if await self._login_evidence(record, page, target_host):
-                            if evidence_since is None:
-                                evidence_since = loop.time()
-                            # Layer 1 (primary): stable credential evidence for 5s → auto-complete.
-                            elif loop.time() - evidence_since >= 5:
-                                record.status = "completed"
-                                record.completed.set()
-                                break
-                        else:
-                            evidence_since = None
-                            if record.status == "waiting" and loop.time() >= no_evidence_confirm_at:
-                                # Layer 3 (fallback): out-of-band confirmation via confirm_login tool.
-                                record.status = "waiting_user_confirm"
+                        record.auth_evidence = await self._login_evidence(record, page, target_host)
                     except Exception:
                         pass
                     await asyncio.sleep(1)
 
-                if record.status in {"waiting", "waiting_user_confirm"}:
+                if record.status == "waiting":
                     record.status = "timeout_failed"
                 if record.status == "completed":
                     storage_path = self.auth_states_dir / f"{_site_key(record.url)}.json"
                     await record.context.storage_state(path=str(storage_path))
                     record.auth_state_path = str(storage_path)
                     _secure_file(storage_path)
-                    record.auth_summary = {"site_key": _site_key(record.url), "storage_state": str(storage_path), "status": "completed"}
+                    record.auth_summary = {
+                        "site_key": _site_key(record.url),
+                        "storage_state": str(storage_path),
+                        "status": "completed",
+                        "auth_evidence": record.auth_evidence,
+                    }
                 if record.browser:
                     await record.browser.close()
         except Exception as exc:
@@ -240,12 +247,14 @@ class LoginManager:
             record.auth_summary = {"error": f"{type(exc).__name__}: {exc}"}
 
     async def _login_evidence(self, record: LoginSession, page: Any, target_host: str) -> bool:
-        """Layer 1 evidence: a credential-like cookie on the *target* site's domain
-        that appeared (or changed) **after** the pre-login baseline snapshot.
+        """观察到的凭据旁证：目标域上**相对登录前基线新增或值变化**的凭据类 Cookie。
+
+        **这是旁证，不是判定。** 结果只写进 ``auth_evidence`` 供上报告知
+        （Agent 可据此提醒用户「看起来已登录，请确认」），绝不自动置 completed。
 
         Issue #20: 只看「有没有名字像凭据的 Cookie」会误判——登录页自己就会设
-        JSESSIONID / PHPSESSID / PHPSESSID / ASP.NET_SessionId 之类。
-        必须要求它是登录后才出现、或值发生了变化，才算已登录的证据。
+        JSESSIONID / PHPSESSID / ASP.NET_SessionId 之类。
+        必须要求它是登录后才出现、或值发生了变化，才算是登录的证据。
         """
         cookies = await record.context.cookies()
         baseline = record.baseline_cookies
@@ -265,64 +274,128 @@ class LoginManager:
         on_target_site = target_host in (urlparse(page.url).hostname or "")
         return has_token_cookie and on_target_site
 
-    def _spawn_native_confirm(self, record: LoginSession) -> None:
-        """Layer 2: OS-native dialog (Windows MessageBoxW, else tkinter) in a daemon
-        thread so the user can confirm even when in-page signals are impossible."""
+    _CONFIRM_PROMPT = "已完成网站登录？\n\n是 = 登录完成，保存登录态\n否 = 还没登好（浏览器保持打开）"
+    _CONFIRM_TITLE = "WebAPIExtractor 登录确认"
+
+    def _ask_native(self) -> bool | None:
+        """Show a blocking OS-native Yes/No dialog. Returns True/False, or None when
+        no dialog could be shown (headless host, unsupported platform)."""
+        try:
+            if sys.platform == "win32":
+                import ctypes
+
+                # 4 = Yes/No, 0x20 = question icon, 0x40000 = topmost。
+                answer = ctypes.windll.user32.MessageBoxW(
+                    0, self._CONFIRM_PROMPT, self._CONFIRM_TITLE, 4 | 0x20 | 0x40000
+                )
+                if answer == 6:  # IDYES
+                    return True
+                if answer == 7:  # IDNO
+                    return False
+                return None
+            import tkinter as tk
+            from tkinter import messagebox
+
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            try:
+                return bool(messagebox.askyesno(self._CONFIRM_TITLE, self._CONFIRM_PROMPT))
+            finally:
+                root.destroy()
+        except Exception:
+            return None
+
+    async def _ask_native_async(self) -> bool | None:
+        """Run the blocking dialog on a daemon thread so a never-answered dialog
+        cannot hold up event-loop shutdown (a non-daemon executor thread can)."""
         import threading
 
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[bool | None] = loop.create_future()
+
         def _worker() -> None:
+            answer = self._ask_native()
             try:
-                if sys.platform == "win32":
-                    import ctypes
-
-                    # 4 = Yes/No, 0x30 = question icon, 0x40000 = topmost
-                    answer = ctypes.windll.user32.MessageBoxW(
-                        0,
-                        "已完成网站登录？\n\n是 = 登录完成，保存登录态\n否 = 还没登好（浏览器保持打开）",
-                        "WebAPIExtractor 登录确认",
-                        4 | 0x20 | 0x40000,
-                    )
-                    if answer == 6 and record.status in {"waiting", "waiting_user_confirm"}:  # IDYES
-                        record.status = "completed"
-                        record.completed.set()
-                else:
-                    import tkinter as tk
-                    from tkinter import messagebox
-
-                    root = tk.Tk()
-                    root.withdraw()
-                    root.attributes("-topmost", True)
-                    answer = messagebox.askyesno(
-                        "WebAPIExtractor 登录确认",
-                        "已完成网站登录？\n\n是 = 登录完成，保存登录态\n否 = 还没登好（浏览器保持打开）",
-                    )
-                    root.destroy()
-                    if answer and record.status in {"waiting", "waiting_user_confirm"}:
-                        record.status = "completed"
-                        record.completed.set()
-            except Exception:
-                pass  # Layer 2 is best-effort; layers 1/3 remain available.
+                loop.call_soon_threadsafe(lambda: None if future.done() else future.set_result(answer))
+            except RuntimeError:
+                pass  # loop already closed — nobody is waiting any more
 
         threading.Thread(target=_worker, daemon=True, name="wae-login-confirm").start()
+        return await future
 
-    def confirm(self, session_id: str) -> dict[str, Any]:
-        """Layer 3 entry point: the agent confirms login on the user's behalf after
-        asking them out-of-band (chat). Called by the confirm_login MCP tool."""
+    async def request_confirm_dialog(self, session_id: str) -> dict[str, Any]:
+        """按需弹出系统确认对话框，并把用户的点选结果**原样返回**。
+
+        旧实现把对话框在浏览器刚打开时就弹出来（用户还没登录，多半点「否」），
+        只处理「是」，点「否」不改变任何状态、且对话框**再也不会出现**——
+        所谓「确认框完全闲置无用」即由此而来。现在：
+
+        * 只在调用方明确请求时弹出（不再在打开浏览器时抢焦点，也不干扰输密码）；
+        * 「否」不再被丢弃：会话保持 ``waiting``，返回 ``confirmed=false``，
+          对话继续进行，之后可以再次请求弹出（可重复）;
+        * 已经不在等待的会话直接拒绝，不会弹出必然变成死物的对话框。
+        """
         record = self.sessions.get(session_id)
         if record is None:
             return {"success": False, "error": "login_session_not_found", "login_session_id": session_id}
-        if record.status not in {"waiting", "waiting_user_confirm"}:
+        if record.status != "waiting":
+            return {"success": False, "error": "not_waiting", "status": record.status}
+        if record.dialog_open:
+            return {"success": False, "error": "dialog_already_open", "status": record.status}
+
+        record.dialog_open = True
+        try:
+            answer = await self._ask_native_async()
+        finally:
+            record.dialog_open = False
+
+        if answer is None:
+            return {"success": False, "error": "dialog_unavailable", "status": record.status,
+                    "message": "无法显示系统对话框，请在对话里直接向用户确认后调用 confirm_login。"}
+        if not answer:
+            # 「否」= 用户还没登好。会话继续等待，对话框可再次请求。
+            return {"success": True, "confirmed": False, "login_session_id": session_id,
+                    "status": record.status,
+                    "message": "用户表示还没登录完成；浏览器保持打开，可稍后再次请求确认。"}
+        record.status = "completed"
+        return {"success": True, "confirmed": True, "login_session_id": session_id, "status": record.status}
+
+    def confirm(self, session_id: str) -> dict[str, Any]:
+        """主路径：Agent 在对话里问过用户、得到肯定答复后，代用户确认登录完成。
+        由 ``confirm_login`` 工具调用。"""
+        record = self.sessions.get(session_id)
+        if record is None:
+            return {"success": False, "error": "login_session_not_found", "login_session_id": session_id}
+        if record.status != "waiting":
             return {"success": False, "error": "not_waiting", "status": record.status}
         record.status = "completed"
-        record.completed.set()
-        return {"success": True, "login_session_id": session_id, "status": "completed"}
+        result: dict[str, Any] = {"success": True, "login_session_id": session_id, "status": "completed"}
+        if not record.auth_evidence:
+            # 用户说登录好了，但浏览器里没观察到凭据类 Cookie——存下来的登录态
+            # 很可能是未认证状态。不阻止（用户可能比启发式更清楚），但必须说出来。
+            result["warning"] = "no_credential_evidence"
+            result["message"] = (
+                "未观察到凭据类 Cookie。若用户其实尚未登录成功，"
+                "保存的登录态将是未认证状态，后续抓包会缺少登录接口。"
+            )
+        return result
 
-    # Issue #14: _control() 已移除——页内控制条的 login_complete 通道不再存在。
-    # 认证完成由三层外置信号决定：_login_evidence()（层1）、_spawn_native_confirm()
-    # （层2）、confirm()（层3，由 confirm_login 工具触发）。
+    # Issue #14: 页内控制条已移除，其 login_complete 通道不再存在。
+    # 认证完成只由**显式确认**决定：confirm()（confirm_login 工具，主路径）或
+    # request_confirm_dialog()（系统对话框，可选兜底）。
+    # _login_evidence() 仅提供 auth_evidence 旁证，不驱动状态流转。
 
     def status(self, session_id: str) -> dict[str, Any]:
         record = self.sessions.get(session_id)
         if record is None:
             return {"success": False, "error": "login_session_not_found", "login_session_id": session_id}
-        return {"login_session_id": session_id, "status": record.status, "auth_state_path": record.auth_state_path, "auth_summary": record.auth_summary}
+        return {
+            "login_session_id": session_id,
+            "status": record.status,
+            "auth_state_path": record.auth_state_path,
+            "auth_summary": record.auth_summary,
+            # 旁证 + 对话框状态，供 Agent 决定「问用户」还是继续等。
+            "auth_evidence": record.auth_evidence,
+            "dialog_open": record.dialog_open,
+        }

@@ -41,6 +41,9 @@ class CaptureSession:
         self.auth_state_path = auth_state_path
         self.status = "authenticating" if not auth_state_path else "capturing"
         self.auth_ready = bool(auth_state_path)
+        # 仅上报：目标域上是否出现名字像凭据的 Cookie。**不驱动状态流转**——
+        # 何时开始记录只由显式确认决定（confirm_login_ready）。
+        self.auth_evidence = False
         self.stop_reason: str | None = None
         self.pause_reason: str | None = None
         self.endpoint_count = 0
@@ -150,35 +153,33 @@ class CaptureSession:
             pass
 
     async def _login_monitor(self) -> None:
-        """Best-effort auto-detect using the same evidence standard as auth.py:
-        a token-like cookie on the *target* site's domain, stable for ~5s.
+        """只观察登录旁证，**从不自动开始记录**。
 
-        Manual fallbacks remain: the in-page "登录完成" button (control action
-        ``login_complete``) and the agent-side ``confirm_login_ready`` tool.
+        旧实现沿用「目标域上出现名字像凭据的 Cookie，稳定 5 秒」就自动
+        ``_enter_capturing()``。但登录页**自己就会设** JSESSIONID /
+        JSESSIONID / PHPSESSID，于是 ``start_capture`` 之后约 6 秒——
+        用户人还在登录页——会话就翻成 ``capturing``；Agent 轮询到 capturing,
+        自然以为可以往下走。（这段注释过去还声称「与 auth.py 同一证据标准」，
+        其实从未同步 Issue #20 的 Cookie 基线比对，两份实现早已分叉。）
+
+        现在这里只把观察结果写进 ``auth_evidence``，由 ``get_capture_status``
+        上报给 Agent 作参考；真正开始记录必须显式确认：
+        ``confirm_login_ready(session_id)``（Agent 问过用户之后再调）。
         """
         from urllib.parse import urlparse as _urlparse
 
         target_host = _urlparse(self.url).hostname or ""
-        evidence_since: float | None = None
         while self.status == "authenticating":
             await asyncio.sleep(1)
             if not getattr(self, "context", None):
                 continue
             try:
                 cookies = await self.context.cookies()
-                has_token_cookie = any(
+                self.auth_evidence = any(
                     any(marker in (c.get("name") or "").lower() for marker in ("token", "session", "sid", "auth"))
                     and same_site(c.get("domain") or "", target_host)
                     for c in cookies
                 )
-                if has_token_cookie:
-                    if evidence_since is None:
-                        evidence_since = time.monotonic()
-                    elif time.monotonic() - evidence_since >= 5:
-                        await self._enter_capturing()
-                        break
-                else:
-                    evidence_since = None
             except Exception:
                 pass
 
@@ -352,7 +353,8 @@ class CaptureSession:
                 await self.pause("idle_timeout")
 
     # Issue #14: 页内控制条已移除，control() / _broadcast_state() 一并删除。
-    # 认证完成改由三层外置信号判定（Cookie 证据 / 系统原生对话框 / confirm_login 工具），
+    # 认证完成只由**显式确认**决定：confirm_login_ready()（Agent 问过用户后调用）。
+    # _login_monitor() 只把登录旁证写进 auth_evidence 供上报，不驱动状态流转。
     # 采集结束由「用户关闭浏览器」自动触发（见 _on_browser_closed）。
 
     async def pause(self, reason: str) -> None:
@@ -386,4 +388,4 @@ class CaptureSession:
             return self.metadata()
 
     def metadata(self) -> dict[str, Any]:
-        return {"session_id": self.session_id, "url": self.url, "status": self.status, "stop_reason": self.stop_reason, "pause_reason": self.pause_reason, "endpoint_count": self.endpoint_count, "created_at": utc_now(), "auth_state_path": self.auth_state_path}
+        return {"session_id": self.session_id, "url": self.url, "status": self.status, "stop_reason": self.stop_reason, "pause_reason": self.pause_reason, "endpoint_count": self.endpoint_count, "created_at": utc_now(), "auth_state_path": self.auth_state_path, "auth_evidence": self.auth_evidence}

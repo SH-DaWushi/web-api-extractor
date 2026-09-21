@@ -75,8 +75,8 @@ echo '{...}' | python mcp_call.py start_capture -
 | 阶段 | 工具 | 作用 |
 |---|---|---|
 | 探测 | `probe_login` | 判断站点登录方式（SPA 友好，含登录入口探测） |
-| 登录 | `http_login` / `open_browser_login` / `get_login_status` / `confirm_login` | 表单登录 / 交互式登录（三层完成判定）/ 查进度 / 带外确认 |
-| 抓包 | `start_capture` / `get_capture_status` / `stop_capture` / `resume_capture` / `confirm_login_ready` | 开始 / 查看 / 结束 / 恢复抓包 / 手动置登录完成 |
+| 登录 | `http_login` / `open_browser_login` / `get_login_status` / `confirm_login` / `request_login_confirm_dialog` | 表单登录 / 交互式登录 / 查进度 / **用户确认登录完成** / 系统对话框兜底确认 |
+| 抓包 | `start_capture` / `get_capture_status` / `stop_capture` / `resume_capture` / `confirm_login_ready` | 开始 / 查看 / 结束 / 恢复抓包 / 确认已登录、开始记录 |
 | 会话 | `list_sessions` | 列出历史会话 |
 | 分析 | `analyze_traffic` / `update_endpoint` | 精简摘要+鉴权 scheme / 补充接口描述 |
 | 加密 | `extract_crypto_logic` | 加密检测：URL 参数信号 + 密文形态 + JS 公钥 |
@@ -89,7 +89,7 @@ echo '{...}' | python mcp_call.py start_capture -
 
 ```
 1. probe_login(url)                        判断登录需求
-2. open_browser_login(url)                 弹浏览器，用户完成登录（三层完成判定）
+2. open_browser_login(url)                 弹浏览器 → 用户完成登录 → 问用户 → confirm_login
 3. start_capture(url, auth_state_path)     带登录态开始抓包
 4. 用户在浏览器里正常操作目标功能            （想变成工具的功能都要真实点一遍）
 5. stop_capture(session_id)                结束收集
@@ -117,7 +117,7 @@ echo '{...}' | python mcp_call.py start_capture -
 - **噪音标记**（`noise: true`，不删除）：埋点/心跳/面包屑/菜单配置/第三方统计域名，生成时默认跳过；
 - **命名参数化**：单样本数字段也参数化（`/user/127733/info` → `/user/{user_id}/info`），同构自动合并；
 - **登录接口识别**：识别「账号+密码换 token」接口（含密码加密策略与 PEM 公钥提取）；
-- **站点档案**：example 等已知站点自动应用语义化工具命名与中文描述（`webapi_extractor/site_profiles/`），其它站点走通用推导。
+- **站点档案**：可选的 `webapi_extractor/site_profiles/` 支持为已知站点应用语义化工具命名与中文描述；仓库不内置任何档案，其它站点走通用推导。
 
 ## 生成的子 MCP 自带的能力
 
@@ -163,8 +163,8 @@ echo '{...}' | python mcp_call.py start_capture -
 
 | 问题 | 处理 |
 |---|---|
-| 浏览器弹出后秒关 / 登录没完成 | 三层完成判定已内置；仍异常时给 `start_capture` 传种子 auth_state（`{"cookies":[],"origins":[]}`）直进抓包模式 |
-| 抓包一直 `authenticating` 不记录 | 传 `auth_state_path`；或 `confirm_login_ready`；或点页内「登录完成」 |
+| 浏览器弹出后秒关 / 登录没完成 | 登录完成只由用户确认，**不做自动判定**；仍异常时给 `start_capture` 传种子 auth_state（`{"cookies":[],"origins":[]}`）直进抓包模式 |
+| 抓包一直 `authenticating` 不记录 | 用户确认登录完成后调 `confirm_login_ready(session_id)`；或直接传 `auth_state_path` |
 | doctor 报缺 Chromium | `python -m playwright install chromium` 或 `doctor --install` |
 | pip 报 `WinError 1392`（dist-info 损坏） | 用 bootstrap 的独立 `.venv`（默认禁用 user site） |
 | `mcp_call.py` 报 `Invalid \escape` | 路径改用正斜杠，或用 `@file` / stdin 传参 |
@@ -188,14 +188,14 @@ WebAPIExtractor/
 ├─ requirements.txt
 └─ webapi_extractor/
    ├─ server.py              # MCP Server 与工具注册
-   ├─ auth.py                # 登录流程（三层完成信号）
+   ├─ auth.py                # 登录流程（用户确认完成，不自动判定）
    ├─ capture.py             # Playwright/CDP 抓包
    ├─ analyzer.py            # 参数化/噪音标记/登录识别
    ├─ crypto_analyzer.py     # 加密检测 + PEM 公钥提取
    ├─ redaction.py           # 脱敏（保留形态元数据）
    ├─ generator.py           # registry 驱动的项目生成
    ├─ project.py             # registry 唯一事实源（diff/merge/export）
-   ├─ site_profiles/         # 站点档案（example 等，可选加载）
+   ├─ site_profiles/         # 站点档案（可选加载，仓库不内置）
    ├─ doctor.py              # 环境自检
    └─ ...
 ```

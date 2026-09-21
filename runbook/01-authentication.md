@@ -10,12 +10,24 @@
 
 ## 登录（拿到 auth_state）
 
-优先 `open_browser_login(url)` → 轮询 `get_login_status(login_session_id)`。
+优先 `open_browser_login(url)` → **由用户确认登录完成后**调 `confirm_login(login_session_id)` 保存登录态。
 
-登录完成判定为**三层信号**（页内按钮不作主机制：CSP/iframe/SSO 弹窗会使其失效）：
-1. **主（自动）**：目标域出现 token/session Cookie 且稳定 5 秒 → 自动 `completed`；
-2. **备（页外）**：extractor 弹出**系统原生对话框**，用户点「是」；
-3. **兜底（带外）**：60 秒无凭据证据 → 状态转 `waiting_user_confirm`，Agent 询问用户后调 `confirm_login(login_session_id)`。
+**登录完成绝不自动判定。** 以前这里按「目标域出现 token/session Cookie 且稳定 5 秒」
+自动置 `completed` 并关掉浏览器——而登录页**自己就会设** `JSESSIONID` /
+`JSESSIONID` / `PHPSESSID`，于是用户还在输密码、Agent 已经拿着 completed
+往下跑了。判定权现在只在用户手里：
+
+| 通道 | 用法 | 说明 |
+|---|---|---|
+| **主：对话确认** | 问用户「登录好了吗」，得到肯定答复后调 `confirm_login(login_session_id)` | 推荐；与 Agent 工作方式一致 |
+| 备用：系统对话框 | `request_login_confirm_dialog(login_session_id)` | 不便用对话询问时用；**会阻塞到用户点选为止**。点「否」返回 `confirmed=false`，会话保持等待，**可再次调用**（对话框可重复弹出） |
+
+`get_login_status` 返回的 `auth_evidence` 只是**旁证**——目标域上相对登录前基线
+新增/值变化的凭据类 Cookie。它用于在用户确认前提示「看起来已经登录成功了，请确认」，
+**不会自动放行**。若 `confirm_login` 返回 `warning=no_credential_evidence`，
+说明没观察到凭据 Cookie，存下的登录态可能是未认证状态，需向用户核实。
+
+确认后登录态落盘为 `<数据目录>/auth_states/<site>.json`。
 
 `http_login` 返回 `fallback=interactive` 时，改用 `open_browser_login`。
 
@@ -24,9 +36,8 @@
 相当一部分站点**无法**靠 Agent 构造 POST 登录：登录需要**验证码**、**前端加密的账号密码**、
 二次验证或 SSO 跳转。`http_login` 对这类站点必然失败。
 
-> 实测：传统 OA 系统（`/api/auth/login/login`）的 `username` 与 `user_password`
-> 均为 RSA 密文（351 字符），且必须带 `captcha` 验证码——
-> 构造请求登录**不可行**。
+> 实测：这类系统的登录接口常把账号与口令整体 RSA 加密（约 344 字符 base64），
+> 且必须带验证码——构造请求登录**不可行**。
 
 **这类站点一律走 CDP 交互式登录**，并按「一次性授权 + Cookie 复用 + 过期重授权」使用：
 

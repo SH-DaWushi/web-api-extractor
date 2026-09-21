@@ -16,7 +16,8 @@ install_method: upload
 按顺序执行；每步的「怎么做」见对应模块（`runbook/xx.md`，相对本目录）。
 
 1. **环境准备 + 传输引导**（新部署一次）：`bootstrap` → `doctor`；工具无法直接调用时用 `start_server.py` + `mcp_call.py`。→ `runbook/00-environment.md`
-2. **探测登录方式 → 登录**：`probe_login`；`open_browser_login`（或 `http_login`）拿 `auth_state`。→ `runbook/01-authentication.md`
+2. **探测登录方式 → 登录**：`probe_login`；`open_browser_login`（或 `http_login`）；
+   **用户确认登录完成后**调 `confirm_login` 拿 `auth_state`。→ `runbook/01-authentication.md`
 3. **抓包**：`start_capture`（带 `auth_state_path`），用户操作目标功能，`stop_capture`。→ `runbook/02-capture.md`
 4. **分析**：`analyze_traffic`。→ `runbook/03-analyze.md`
 5. **加密与凭据核实**（强制，禁止跳过）：看 `crypto_found`，必要时 `extract_crypto_logic`。→ `runbook/04-crypto.md`
@@ -26,7 +27,9 @@ install_method: upload
 ## 关键限制（硬规则）
 
 - **步骤 5 不可跳过**：抓包里的凭据值必然被脱敏为 `***`，明文/密文不可区分，禁止假设，必须核实。
-- **无法构造 POST 登录的站点**（验证码 / 凭据加密 / MFA / SSO）：一律走 CDP 交互式登录，**不要逆向其登录加密或验证码**。
+- **登录完成必须由用户确认**：`open_browser_login` 后先问用户是否已登录完成，得到答复再调
+  `confirm_login`；抓包未带 `auth_state_path` 时，问用户后再调 `confirm_login_ready`。
+  工具返回的 `auth_evidence` 只是旁证，**不得据此自行判定并往下走**——用户确认前不要开始抓包或分析。
 - **启动服务务必用 `start_server.py`**，不要直接在宿主 shell 后台跑 `run_http.py`（否则浏览器「打开后立刻消失」）。
 
 ## 模块索引
@@ -34,7 +37,7 @@ install_method: upload
 | 模块 | 内容 | 何时加载 |
 |---|---|---|
 | `runbook/00-environment.md` | 环境准备、传输引导 | 新部署 / 工具无法调用时 |
-| `runbook/01-authentication.md` | 探测登录、登录（三层证据、SSO 交互式授权生命周期） | 登录环节 |
+| `runbook/01-authentication.md` | 探测登录、登录（用户确认登录完成、SSO 交互式授权生命周期） | 登录环节 |
 | `runbook/02-capture.md` | 抓包 | 抓包环节 |
 | `runbook/03-analyze.md` | 分析能力（噪音/参数化/登录接口/站点档案） | 分析环节 |
 | `runbook/04-crypto.md` | 加密与凭据核实 | `crypto_found=true` 时必读 |

@@ -128,11 +128,15 @@ async def start_capture(
     store.write_metadata(session_id, metadata)
     import asyncio
     asyncio.create_task(_start_capture(capture))
-    return {
-        "session_id": session_id,
-        "status": initial_status,
-        "message": "浏览器已打开，请先登录——登录成功后无需任何操作，直接开始正常使用网站即可，完成后再返回告诉我。" if initial_status == "authenticating" else "请正常操作网站，完成后回来告诉我或调用 stop_capture() 完成收集。",
-    }
+    if initial_status == "authenticating":
+        message = (
+            "浏览器已打开。请让用户先完成登录，**等用户确认已登录后**再调用 "
+            "confirm_login_ready(session_id)，我才会开始记录；在那之前不记录任何流量。"
+            "（get_capture_status 里的 auth_evidence 只是旁证，**不会自动开始记录**。）"
+        )
+    else:
+        message = "请让用户正常操作网站，完成后回来告诉我或调用 stop_capture() 完成收集。"
+    return {"session_id": session_id, "status": initial_status, "message": message}
 
 
 @mcp.tool()
@@ -278,14 +282,34 @@ async def extract_crypto_logic(session_id: str) -> dict[str, Any]:
 @mcp.tool()
 @audited
 async def confirm_login(login_session_id: str) -> dict[str, Any]:
-    """Layer-3 login confirmation: the agent asks the user out-of-band and confirms."""
+    """登录确认（主路径）：Agent 已在对话里问过用户、用户答复登录完成后调用。
+
+    完成一律靠显式确认，工具不会自动判定。若返回 warning=no_credential_evidence，
+    说明浏览器里没观察到凭据类 Cookie，存下的登录态可能是未认证状态。
+    """
     return login_manager.confirm(login_session_id)
 
 
 @mcp.tool()
 @audited
+async def request_login_confirm_dialog(login_session_id: str) -> dict[str, Any]:
+    """可选兜底：弹出系统对话框让用户点选「是/否」确认登录，并返回用户的选择。
+
+    在不方便用对话询问时使用。点「否」不会丢弃——会话保持等待，可再次调用本工具
+    （对话框可重复弹出）。调用会阻塞到用户作答为止。会话已结束时会被拒绝，
+    不会弹出必然变成死物的对话框。
+    """
+    return await login_manager.request_confirm_dialog(login_session_id)
+
+
+@mcp.tool()
+@audited
 async def confirm_login_ready(session_id: str) -> dict[str, Any]:
-    """Manually flip a capture session from authenticating to capturing (agent-side)."""
+    """放行开始记录：Agent 问过用户、用户确认已登录后再调。
+
+    会话从 authenticating 翻到 capturing。**这是唯一放行方式**——登录旁证
+    （get_capture_status 的 auth_evidence）不会自动放行。
+    """
     capture = capture_sessions.get(session_id)
     if capture is None:
         return {"success": False, "error": "capture_session_not_found", "session_id": session_id}
@@ -331,7 +355,7 @@ async def merge_capture(
 ) -> dict[str, Any]:
     """确认后把抓包合并进 registry（version+1）。鉴权 scheme 变化须显式 allow_auth_change=true。
 
-    endpoint_keys 形如 ["GET|node.example.com|/pets"]；不传则合并全部。
+    endpoint_keys 形如 ["GET|api.example.com|/pets"]；不传则合并全部。
     """
     analysis_path = store.session_path(session_id) / "analysis.json"
     if not analysis_path.exists():
