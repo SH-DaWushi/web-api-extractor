@@ -29,6 +29,10 @@
 
 确认后登录态落盘为 `<数据目录>/auth_states/<site>.json`。
 
+> ⚠️ 该文件**是明文的**：Cookie 原样保存，`http_login` 默认还会把账号与密码写进
+> `secrets` 字段。它只应留在本机数据目录，**禁止提交、同步、截图或分享**。
+> 复用它给子项目时，真正被需要的是其中的 Cookie，不是密码。
+
 `http_login` 返回 `fallback=interactive` 时，改用 `open_browser_login`。
 
 ## 无法用构造请求登录的站点（验证码 / 凭据加密 / MFA / SSO）

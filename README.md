@@ -1,5 +1,9 @@
 # WebAPIExtractor
 
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![License](https://img.shields.io/badge/license-custom%20(non--commercial)-orange)
+
 **让 Agent 陪你打开真实浏览器、完成真实登录与操作，把「你点过的每一个功能」变成可调用的 API，并一键生成对接该站点的 MCP 工具服务器。**
 
 它给你的不是一份静态 API 列表，而是一条完整链路：
@@ -25,6 +29,31 @@
 
 ---
 
+## 安装
+
+两种形态，选一种。
+
+**A. 作为 Skill / 完整工作流（推荐）** —— 克隆本仓库后按下面 1–3 步走。
+`SKILL.md`、`runbook/`、`bootstrap.*`、`start_server.py`、`mcp_call.py` 都是仓库内文件
+（Skill 正是按文件消费的），发行包里没有。
+
+```bash
+git clone https://github.com/shdawushi-dotcom/WebAPIExtractor.git
+cd WebAPIExtractor
+```
+
+**B. 作为 Python 库 / MCP Server**
+
+```bash
+pip install web-api-extractor
+python -m playwright install chromium
+```
+
+此时入口为 `web-api-extractor`（stdio）与 `python -m webapi_extractor serve-http`；
+仓库内的驱动脚本（`mcp_call.py`、`start_server.py` 等）不在发行包里。
+
+---
+
 ## 快速开始
 
 ### 1. 环境准备（新机器只需一次）
@@ -45,15 +74,28 @@ python -m webapi_extractor doctor             # 自检：依赖 / Chromium / 数
 python -m webapi_extractor doctor --install   # 自检并自动补装缺失项
 ```
 
-依赖：Python ≥ 3.10，`fastmcp / httpx / jinja2 / playwright` + Playwright Chromium 内核。
+依赖：Python ≥ 3.10，`fastmcp / httpx / playwright` + Playwright Chromium 内核。
 
 ### 2. 启动服务
 
 ```bash
-python run_http.py        # HTTP 传输，监听 http://127.0.0.1:8422/mcp
+# HTTP 传输（推荐）：务必用 start_server.py
+python start_server.py              # 监听 http://127.0.0.1:8422/mcp
+python start_server.py --status     # 查看状态（端口 / PID / 日志）
+python start_server.py --stop       # 停止
+python start_server.py --port 8423  # 换端口
+
 # 或 stdio 方式（供 MCP 客户端直接拉起）：
 python -m webapi_extractor
 ```
+
+> ⚠️ **不要用宿主 shell 的「后台任务」方式直接跑 `run_http.py`** —— 该脚本自己的
+> docstring 也是这么写的。那样进程仍留在宿主 shell 的 job object 内，宿主回收
+> shell 时，服务连同它拉起的 Chromium 会被一起杀掉：症状是浏览器窗口**一闪即消失**、
+> 端口失去监听，而日志末尾完全正常，极易误判成「目标网站有问题」。
+> `start_server.py` 用 `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP |
+> CREATE_BREAKAWAY_FROM_JOB` 让服务彻底独立，并把日志与 PID 落盘。
+> 详见 [`runbook/00-environment.md`](runbook/00-environment.md)。
 
 ### 3. 调用工具
 
@@ -76,7 +118,7 @@ echo '{...}' | python mcp_call.py start_capture -
 |---|---|---|
 | 探测 | `probe_login` | 判断站点登录方式（SPA 友好，含登录入口探测） |
 | 登录 | `http_login` / `open_browser_login` / `get_login_status` / `confirm_login` / `request_login_confirm_dialog` | 表单登录 / 交互式登录 / 查进度 / **用户确认登录完成** / 系统对话框兜底确认 |
-| 抓包 | `start_capture` / `get_capture_status` / `stop_capture` / `resume_capture` / `confirm_login_ready` | 开始 / 查看 / 结束 / 恢复抓包 / 确认已登录、开始记录 |
+| 抓包 | `start_capture` / `get_capture_status` / `stop_capture` / `resume_capture` / `confirm_login_ready` / `request_capture_confirm_dialog` | 开始 / 查看 / 结束 / 恢复抓包 / 确认已登录、开始记录 / 同上，改用系统对话框让用户点选 |
 | 会话 | `list_sessions` | 列出历史会话 |
 | 分析 | `analyze_traffic` / `update_endpoint` | 精简摘要+鉴权 scheme / 补充接口描述 |
 | 加密 | `extract_crypto_logic` | 加密检测：URL 参数信号 + 密文形态 + JS 公钥 |
@@ -87,15 +129,20 @@ echo '{...}' | python mcp_call.py start_capture -
 
 ## 典型工作流
 
+编号与 [`SKILL.md`](SKILL.md) 的 7 步流程一一对应。
+
 ```
-1. probe_login(url)                        判断登录需求
-2. open_browser_login(url)                 弹浏览器 → 用户完成登录 → 问用户 → confirm_login
-3. start_capture(url, auth_state_path)     带登录态开始抓包
-4. 用户在浏览器里正常操作目标功能            （想变成工具的功能都要真实点一遍）
-5. stop_capture(session_id)                结束收集
-6. analyze_traffic(session_id)             精简摘要：噪音标记 / 命名参数化 / 登录接口识别
-7. 凭据与加密核实（强制）                    抓包中凭据必然是 ***，禁止假设明文，四层手段核实
-8. generate_mcp_server(session_id, dir, endpoint_ids)   生成 registry 项目
+1. bootstrap → doctor                            环境准备（新机器只需一次）
+2. probe_login(url)                              判断登录需求
+   open_browser_login(url)                       弹浏览器 → 用户完成登录
+   → 问用户 → confirm_login(login_session_id)     登录完成只由用户确认，不自动判定
+3. start_capture(url, auth_state_path)           带登录态开始抓包
+   ↳ 用户在浏览器里正常操作目标功能                 （想变成工具的功能都要真实点一遍）
+   ↳ stop_capture(session_id)                     操作完结束收集
+4. analyze_traffic(session_id)                   精简摘要：噪音标记 / 命名参数化 / 登录接口识别
+5. 凭据与加密核实（强制，禁止跳过）                抓包中凭据必然是 ***，禁止假设明文，四层手段核实
+6. generate_mcp_server(session_id, dir, endpoint_ids)   生成 registry 项目
+7. diff_capture → merge_capture → regenerate_server → export_project   持续迭代
 ```
 
 **持续迭代（漏了 API 不用推倒重来）**：
@@ -134,9 +181,13 @@ echo '{...}' | python mcp_call.py start_capture -
 ## 安全设计
 
 - **脱敏保留形态**：凭据值抹为 `***`，但保留长度/形态元数据（如 RSA-2048 密文恒为 344 字符 base64）——下游可判明密文而不见值；
-- **凭据不落明文**：`.env` 留空即可；`login()` 成功后凭据与 token 走系统级加密存储；
+- **生成的子项目不落明文凭据**：`.env` 留空即可；`login()` 成功后凭据与 token 以 **DPAPI 加密**持久化（`cred_cache.bin` / `token_cache.bin`，仅同一 Windows 用户可解密），401 自动重登录；
+- **本工具自身的登录态是明文的**：`auth_states/<site>.json` 里，`open_browser_login` 存下的
+  Cookie 是明文，`http_login` 默认还会把**账号与密码**一并写入该文件的 `secrets` 字段。
+  它只应留在本机数据目录（`config.py` 会在该目录写入 `*` 规则的 `.gitignore`），
+  **禁止提交、同步、截图或分享**。复用它给子项目时，真正被需要的是其中的 Cookie，不是密码；
 - **审计规范**：日志只记脱敏账号与加密策略，永不记密码；
-- **强制核实规则**（SKILL 步骤 5）：抓包中凭据字段明密文不可区分，禁止假设，必须按四层手段核实后再实现。
+- **强制核实规则**（步骤 5）：抓包中凭据字段明密文不可区分，禁止假设，必须按四层手段核实后再实现。
 
 ---
 
@@ -149,13 +200,18 @@ echo '{...}' | python mcp_call.py start_capture -
 └─ audit.log               # 工具调用审计日志
 ```
 
+环境变量的**完整清单以本表为准**（`runbook/90-reference.md` 只做指向，避免两处各自维护后漂移）；
+实现见 `webapi_extractor/config.py`。
+
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
 | `WEB_API_EXTRACTOR_DATA` | `~/.webapiextractor` | 数据根目录 |
 | `WEB_API_EXTRACTOR_RESPONSE_LIMIT` | `262144` | 响应体截断上限（字节） |
 | `WEB_API_EXTRACTOR_IDLE_TIMEOUT` | `300` | 无操作自动暂停（秒） |
 | `WEB_API_EXTRACTOR_MAX_SESSIONS` | `3` | 并发抓包会话上限 |
-| `WEB_API_EXTRACTOR_PROBE_TIMEOUT` | `15000` | 探测超时（毫秒） |
+| `WEB_API_EXTRACTOR_PROBE_TIMEOUT` | `15000` | 登录探测超时（毫秒） |
+| `WEB_API_EXTRACTOR_NOISE_RESPONSE_BYTES` | `1048576` | 单端点累计响应体超此值 → 标记待复核 |
+| `WEB_API_EXTRACTOR_NOISE_SAMPLE_COUNT` | `50` | 单端点采样次数超此值 → 标记待复核 |
 
 ---
 
@@ -180,24 +236,38 @@ echo '{...}' | python mcp_call.py start_capture -
 
 ```
 WebAPIExtractor/
-├─ SKILL.md                  # Agent 操作手册（按步骤照做）
-├─ README.md                 # 本文件（唯一事实源，随功能提交演进）
-├─ bootstrap.py / .ps1 / .sh # 环境引导（纯 Python 版免疫受限环境）
-├─ run_http.py               # HTTP 传输启动器 (127.0.0.1:8422/mcp)
-├─ mcp_call.py               # MCP 工具驱动（@file/stdin 传参，404 自愈）
-├─ requirements.txt
+├─ SKILL.md                     # Agent 操作手册主索引（按步骤照做）
+├─ README.md                    # 本文件（人类入口；环境变量清单以此处为准）
+├─ runbook/                     # SKILL 的分步模块，按需加载
+│                               #   00 环境 / 01 登录 / 02 抓包 / 03 分析 / 04 加密
+│                               #   05 生成 / 06 迭代 / 90 参考 / 99 排错
+├─ bootstrap.py / .ps1 / .sh    # 环境引导（纯 Python 版免疫受限环境）
+├─ start_server.py              # 启动 HTTP 服务的推荐方式（脱离 shell job object）
+├─ run_http.py                  # 等价的 HTTP 启动器（勿用后台任务方式直接跑）
+├─ mcp_call.py                  # MCP 工具驱动（@file / stdin 传参，404 自愈）
+├─ install-agent.ps1            # 装依赖 + Chromium（供 Agent 导入）
+├─ package-agent.ps1            # 打包成可分发的 zip
+├─ pyproject.toml               # 打包元数据（含 license / readme / classifiers）
+├─ requirements.txt             # 运行 + 测试依赖
+├─ LICENSE                      # 自拟使用条款（非 SPDX / OSI）
+├─ .gitignore / .gitattributes  # 忽略运行产物；锁定行尾（*.sh 必须为 LF）
+├─ .vscode/mcp.json             # 把本服务注册为 stdio MCP（无本机绝对路径）
+├─ tests/                       # pytest 套件（20 个文件）
 └─ webapi_extractor/
-   ├─ server.py              # MCP Server 与工具注册
-   ├─ auth.py                # 登录流程（用户确认完成，不自动判定）
-   ├─ capture.py             # Playwright/CDP 抓包
-   ├─ analyzer.py            # 参数化/噪音标记/登录识别
-   ├─ crypto_analyzer.py     # 加密检测 + PEM 公钥提取
-   ├─ redaction.py           # 脱敏（保留形态元数据）
-   ├─ generator.py           # registry 驱动的项目生成
-   ├─ project.py             # registry 唯一事实源（diff/merge/export）
-   ├─ site_profiles/         # 站点档案（可选加载，仓库不内置）
-   ├─ doctor.py              # 环境自检
-   └─ ...
+   ├─ __main__.py               # CLI：doctor | serve-http |（默认）stdio
+   ├─ server.py                 # MCP Server 与工具注册
+   ├─ auth.py                   # 登录流程（用户确认完成，不自动判定）
+   ├─ capture.py                # Playwright/CDP 抓包
+   ├─ analyzer.py               # 参数化 / 噪音标记 / 登录识别
+   ├─ crypto_analyzer.py        # 加密检测 + PEM 公钥提取
+   ├─ generator.py              # registry 驱动的项目生成
+   ├─ project.py                # registry 唯一事实源（diff / merge / export）
+   ├─ redaction.py / bodies.py  # 脱敏（保留形态元数据）/ 请求体解析
+   ├─ dialog.py                 # 系统原生确认对话框（登录与抓包共用一份实现）
+   ├─ doctor.py                 # 环境自检
+   ├─ domain.py / probe.py / proxy_env.py / login_detector.py
+   ├─ audit.py / storage.py / config.py
+   └─ site_profiles/            # 站点档案（可选加载，仓库不内置）
 ```
 
 ---

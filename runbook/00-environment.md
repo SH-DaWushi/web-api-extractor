@@ -4,7 +4,7 @@
 
 ## 环境准备（新部署必做，只需一次）
 
-工具依赖 `fastmcp / httpx / jinja2 / playwright` + Playwright Chromium 内核。
+工具依赖 `fastmcp / httpx / playwright` + Playwright Chromium 内核。
 
 ```powershell
 # Windows：一键引导（创建独立 .venv，装依赖+Chromium，跑自检）
