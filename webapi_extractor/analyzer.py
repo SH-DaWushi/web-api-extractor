@@ -76,7 +76,7 @@ def _is_noise(host: str, path: str) -> bool:
 #
 # 修复前 auth_required 只检查 Authorization 头与 auth_candidate，**完全没看 Cookie**。
 # 于是 CDP 能抓到 Cookie（#1 已修）后，判定仍全部为 False，
-# 生成的代码不带任何鉴权（实测 7 个工具全部 401）。
+# 生成的代码不带任何鉴权（实测生成的工具会因缺少鉴权而全部返回 401）。
 #
 # 但也不能「见到 Cookie 就算需要鉴权」——埋点 Cookie（Application Insights 的
 # ai_user/ai_session、GA 的 _ga 等）几乎每个站点都有，会变成噪音。
@@ -167,8 +167,7 @@ def _request_needs_auth(request: dict[str, Any]) -> bool:
 #      语义依赖父请求上下文里的必需参数（如 Target=@tid），独立调用必失败。
 #
 #   2) 从 $batch 还原出的集合端点，若原 query 无分页参数 —— 独立调用即拉全表。
-#      实测同一端点：无分页上限 >90s 超时；加 $top=50 用 23.3s；
-#      加 $top=10 用 3.1s。
+#      量级实测：无分页上限会超时；加 $top=50 约数十秒；加 $top=10 约数秒。
 # --------------------------------------------------------------------------- #
 # OData 命名空间形式的函数段：以大写字母开头的点分标识符，
 # 且含 Microsoft.Dynamics.CRM / OData 常见命名空间前缀。
@@ -226,7 +225,7 @@ def is_single_record_path(path: str) -> bool:
 
 
 # 这些参数是「查询的全部内容」而非可选修饰——不传就会退化成危险的默认查询。
-# 例如 D365 的 fetchXml：不传等价于「拉全表」，实测 >90s 超时。
+# 例如 OData / D365 的 fetchXml：不传等价于「拉全表」，实测会超时。
 _QUERY_DEFINING_PARAMS = ("fetchxml", "query", "sql", "odataquery", "filter")
 
 
@@ -261,7 +260,7 @@ def suggest_pagination(query_params: dict[str, Any] | None,
     return {
         "reason": "batch_derived_without_pagination",
         "suggest": "在生成工具时注入默认分页上限（如 $top=50 或 fetch count）",
-        "evidence": "实测同一端点：无上限 >90s 超时；$top=50 用 23.3s；$top=10 用 3.1s",
+        "evidence": "实测同一端点：无上限会超时；$top=50 约数十秒；$top=10 约数秒",
     }
 
 
@@ -570,9 +569,9 @@ def _non_json_response(responses: list[dict[str, Any]],
                        bodies: list[Any] | None = None) -> bool:
     """Issue #16 / #19：端点样本的响应是否「非 JSON」（页面/控件端点）。
 
-    Issue #19：判定必须**同时看响应体**。大量 Java / 遗留系统（传统 OA 系统 等）
+    Issue #19：判定必须**同时看响应体**。大量 Java / 遗留系统
     用 ``Content-Type: text/plain`` 返回 JSON 体，只看响应头会把这类站点的接口
-    整体误杀——实测 大量端点被砍到 3 个。
+    整体误杀（实测大量端点只剩个位数）。
 
     判定仍保守：任一响应头是 JSON，**或任一响应体能解析为 JSON**，即视为数据接口、
     不标记。反之，观察到非 JSON 响应头或 3xx 重定向、且全无 JSON 证据才标记。
@@ -766,9 +765,9 @@ def analyze_capture(
                 for key, value in parse_qsl(urlsplit(sample["request"].get("url", "")).query):
                     if value not in query_params[key]:
                         query_params[key].append(value)
-            # Issue #23: 表单编码请求体的字段同样要变成工具参数。传统 OA 系统 等
-            # 传统系统全靠 POST 体传参，此前只解析 JSON 体导致参数全丢——工具能连通
-            # 但缺参数必然业务报错（实测 "业务报错"）。
+            # Issue #23: 表单编码请求体的字段同样要变成工具参数。传统服务端渲染系统
+            # 的接口全靠 POST 体传参，此前只解析 JSON 体导致参数全丢——工具能连通
+            # 但缺参数必然业务报错。
             request_body_params: dict[str, list[str]] = defaultdict(list)
             for sample in selected:
                 for name, raw_value in parse_form_urlencoded(sample["request"].get("postData")) or []:

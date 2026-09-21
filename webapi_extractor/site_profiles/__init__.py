@@ -19,10 +19,12 @@ from __future__ import annotations
 import re
 from typing import Any, Callable
 
-# 域名关键词 -> 档案模块名（小写）
-_REGISTRY: dict[str, str] = {
-    "jtest": "jtest",
-}
+# 域名关键词 -> 档案模块名（小写）。
+# 目前为空：仓库不内置任何站点档案，站点专属语义一律由使用者自建档案提供。
+# 注意：这里的每一条都必须有对应的模块文件——缺失的模块会让 get_profile()
+# 抛 ModuleNotFoundError，而调用方把它吞成 None，功能会**静默失效**。
+# tests/test_param_alias.py 对此有守卫用例。
+_REGISTRY: dict[str, str] = {}
 
 # 已加载档案缓存
 _LOADED: dict[str, dict[str, Any]] = {}

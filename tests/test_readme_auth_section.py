@@ -4,9 +4,9 @@
 纯 Cookie 鉴权站点的 registry 里 `hosts[host].scheme` 为 **None**（凭据走
 `cookie_names` + 运行时 `.env` 的 `<PREFIX>_COOKIE_<HOST>`），而端点
 `auth_required` 为 true。若 README 直接按 `scheme or '无（公开接口）'` 渲染，
-就会把**需要登录态**的站点写成公开接口 —— 实测某 OA 系统（传统 OA 系统）的
-大量端点全部如此，`.env.example` 写着要填 Cookie，README 却说
-「无（公开接口）」，两份文档互相矛盾，未来对接方会据此漏配 Cookie 而全部 401。
+就会把**需要登录态**的站点写成公开接口 —— 实测某 OA 系统的**全部端点**都是如此，
+`.env.example` 写着要填 Cookie，README 却说「无（公开接口）」，
+两份文档互相矛盾，未来对接方会据此漏配 Cookie 而全部 401。
 """
 from __future__ import annotations
 
@@ -17,14 +17,14 @@ COOKIE_HOST = "oa.example.com"
 
 def _registry(hosts: dict, auth_required: bool = True) -> dict:
     return {
-        "site_name": "cms",
+        "site_name": "portal",
         "registry_version": 1,
         "hosts": hosts,
         "endpoints": [{
-            "tool_name": "get_api_system_info_status",
+            "tool_name": "get_api_system_status",
             "method": "GET",
             "host": COOKIE_HOST,
-            "path": "/api/system/info/status",
+            "path": "/api/system/status",
             "auth_required": auth_required,
             "status": "active",
         }],
@@ -50,20 +50,20 @@ class TestCookieOnlyHost:
         assert f"- `{COOKIE_HOST}`：Cookie（" in readme
 
     def test_lists_observed_cookie_names(self):
-        """只列凭据类 Cookie：裸 `SERVERID` 不带凭据特征，被 is_credential_cookie 过滤。"""
+        """只列凭据类 Cookie：`SERVERID` 不含凭据特征，被 is_credential_cookie 过滤。"""
         readme = _readme(_registry(self.HOSTS))
         assert "JSESSIONID" in readme and "loginToken" in readme
 
     def test_points_at_cookie_env_var(self):
         """要给出可操作配置项，而不是只描述现象（具体键名见 .env.example）。"""
         readme = _readme(_registry(self.HOSTS))
-        assert "CMS_COOKIE_" in readme
+        assert "PORTAL_COOKIE_" in readme
         assert "auth_states/" in readme
 
     def test_no_bogus_token_line(self):
         """纯 Cookie 站点不应让人去填 token（.env.example 里根本没这项）。"""
         readme = _readme(_registry(self.HOSTS))
-        assert "`CMS_TOKEN`" not in readme
+        assert "`PORTAL_TOKEN`" not in readme
 
 
 class TestTrulyPublicHost:
@@ -71,7 +71,7 @@ class TestTrulyPublicHost:
         hosts = {COOKIE_HOST: {"scheme": None, "cookie_names": []}}
         readme = _readme(_registry(hosts, auth_required=False))
         assert "无（公开接口）" in readme
-        assert "`CMS_TOKEN`" in readme
+        assert "`PORTAL_TOKEN`" in readme
 
 
 class TestAuthRequiredWithoutSchemeOrCookie:
@@ -90,4 +90,4 @@ class TestBearerHost:
         registry["endpoints"][0]["host"] = "api.example.com"
         readme = _readme(registry)
         assert "- `api.example.com`：Bearer" in readme
-        assert "`CMS_TOKEN`" in readme
+        assert "`PORTAL_TOKEN`" in readme

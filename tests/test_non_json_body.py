@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """Issue #19：非 JSON 判定必须同时看响应体，而非只看 Content-Type。
 
-大量 Java / 遗留系统（传统 OA 系统 等）用 `Content-Type: text/plain`
-返回 **JSON 体**。只看响应头会把这类站点的接口整体误杀——实测 大量端点
-被砍到 3 个。本问题是 #16 的修复引入的回归（粒度过粗）。
+大量 Java / 遗留系统用 `Content-Type: text/plain` 返回 **JSON 体**。
+只看响应头会把这类站点的接口整体误杀。本问题是 #16 的修复引入的回归（粒度过粗）。
 """
 from __future__ import annotations
 
@@ -17,7 +16,7 @@ def _resp(content_type: str | None = None, status: int | None = 200) -> dict:
     return {"headers": {"Content-Type": content_type} if content_type else {}, "status": status}
 
 
-JSON_BODY = '{"formItems":[{"atype":"account","name":"username"}]}'
+JSON_BODY = '{"items":[{"type":"account","name":"username"}]}'
 
 
 class TestLooksLikeJsonBody:
@@ -36,7 +35,7 @@ class TestLooksLikeJsonBody:
 
 class TestNonJsonResponse:
     def test_text_plain_with_json_body_is_data_endpoint(self):
-        """传统 OA的核心场景：头说 text/plain，体是 JSON。"""
+        """核心场景：头说 text/plain，体是 JSON。"""
         assert _non_json_response([_resp("text/plain; charset=utf-8")], [JSON_BODY]) is False
 
     def test_text_plain_with_js_bundle_still_non_json(self):
@@ -64,10 +63,10 @@ class TestRegistryKeepsSuchEndpoints:
     def test_text_plain_json_endpoint_is_generated(self):
         analysis = {
             "endpoints": [{
-                "method": "POST", "host": "oa.example.com",
+                "method": "POST", "host": "portal.example.com",
                 "path": "/api/portal/dashboard/data",
                 "query_params": {}, "sample_count": 2,
-                "url": "https://oa.example.com/api/portal/dashboard/data",
+                "url": "https://portal.example.com/api/portal/dashboard/data",
                 "non_json_response": False,   # 修复后应为 False
             }],
             "auth_metadata": {"auth_schemes": {}},

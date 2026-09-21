@@ -4,7 +4,7 @@
 修复前 `_login_evidence()` 只要目标域上存在名字含 token/session/sid/auth 的
 Cookie 就算已登录。而登录页**自己就会设**这类 Cookie：
 
-    PHPSESSID / JSESSIONID / PHPSESSID / ASP.NET_SessionId
+    JSESSIONID / PHPSESSID / ASP.NET_SessionId / SERVERID
 
 于是页面刚加载就被判 completed，约 6 秒后 `record.browser.close()` 关掉浏览器，
 用户根本来不及登录。
@@ -21,7 +21,7 @@ import pytest
 from webapi_extractor.auth import LoginManager, LoginSession, _cookie_baseline
 
 OA_HOST = "oa.example.com"
-LOGIN_URL = f"https://{OA_HOST}/login/login.jsp"
+LOGIN_URL = f"https://{OA_HOST}/login"
 HOME_URL = f"https://{OA_HOST}/home"
 
 
@@ -55,13 +55,13 @@ def manager():
     return LoginManager(Path("."))
 
 
-# 传统 OA 系统 登录页实际设置的 Cookie（全部在**登录前**落下）
+# 典型 Java / PHP 登录页在**登录前**就会落下的 Cookie
 PRE_AUTH = [
-    _cookie("SERVERID", "rand"),
-    _cookie("SERVERID", "abc"),
-    _cookie("PHPSESSID", "AAA111"),
     _cookie("JSESSIONID", "BBB222"),
-    _cookie("csrftoken", "1234"),
+    _cookie("PHPSESSID", "AAA111"),
+    _cookie("SERVERID", "node-1"),
+    _cookie("csrftoken", "csrf-1"),
+    _cookie("_ga", "GA1.2.3"),
 ]
 
 
@@ -85,7 +85,7 @@ class TestRealLoginIsDetected:
 
     async def test_rotated_session_id_counts(self, manager):
         """会话固定防护会轮换 session id —— 值变化也应判为已登录。"""
-        after = [_cookie("PHPSESSID", "ROTATED-999")] + PRE_AUTH[2:]
+        after = [_cookie("JSESSIONID", "ROTATED-999")] + PRE_AUTH[1:]
         rec = _record(after, baseline=PRE_AUTH)
         assert await manager._login_evidence(rec, _FakePage(HOME_URL), OA_HOST) is True
 

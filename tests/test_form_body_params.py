@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 """Issue #23：表单编码的 POST 请求体必须变成工具参数。
 
-传统 OA 系统 等传统系统全靠表单编码体传参：
+传统服务端渲染系统普遍靠表单编码体传参：
 
     POST /api/portal/dashboard/data
     section=4&companyId=2&menuIds=0%2C4
 
 修复前 analyzer 只对能 json.loads 的请求体产出 request_schema，表单体全丢，
-生成的工具签名只剩 confirm —— 能连通、能鉴权，但缺参数必然业务报错
-（实测 "业务报错"）。
+生成的工具签名只剩 confirm —— 能连通、能鉴权，但缺参数必然业务报错。
 """
 from __future__ import annotations
 
@@ -22,7 +21,7 @@ from webapi_extractor.bodies import body_fields, parse_form_urlencoded
 from webapi_extractor.generator import _param_decl, _render_tool
 from webapi_extractor.project import session_to_registry_entries
 
-URL = "https://oa.example.com/api/portal/dashboard/data"
+URL = "https://portal.example.com/api/portal/dashboard/data"
 FORM_BODY = "section=4&companyId=2&menuIds=0%2C4&includeHidden=false"
 
 
@@ -94,7 +93,7 @@ class TestRegistryPassthrough:
 class TestRenderedTool:
     def _entry(self, **extra):
         base = {
-            "tool_name": "dashboard", "method": "POST", "host": "oa.example.com",
+            "tool_name": "dashboard", "method": "POST", "host": "portal.example.com",
             "path": "/api/portal/dashboard/data", "path_params": [],
             "query_params": {}, "sample_count": 3,
         }
@@ -102,26 +101,26 @@ class TestRenderedTool:
         return base
 
     def test_signature_exposes_body_fields(self):
-        src = _render_tool(self._entry(request_body_params={"section": ["4"], "companyId": ["2"]}), "CMS")
+        src = _render_tool(self._entry(request_body_params={"section": ["4"], "companyId": ["2"]}), "PORTAL")
         assert "section" in src and "companyId" in src
         assert "confirm: bool = False" in src
 
     def test_call_uses_form_body(self):
-        src = _render_tool(self._entry(request_body_params={"section": ["4"]}), "CMS")
+        src = _render_tool(self._entry(request_body_params={"section": ["4"]}), "PORTAL")
         assert "form_body={" in src
         assert "json_body=" not in src
 
     def test_no_body_kwarg_without_params(self):
-        src = _render_tool(self._entry(), "CMS")
+        src = _render_tool(self._entry(), "PORTAL")
         assert "form_body=" not in src
 
     def test_default_gate_blocks_volatile_values(self):
         """含逗号的值不给默认（避免把抓包当时的真实数据烘进分发包）。"""
-        src = _render_tool(self._entry(request_body_params={"menuIds": ["0,4"]}), "CMS")
+        src = _render_tool(self._entry(request_body_params={"menuIds": ["0,4"]}), "PORTAL")
         assert "menuIds: str | None = None" in src
 
     def test_identity_like_name_gets_no_default(self):
-        src = _render_tool(self._entry(request_body_params={"userId": ["591"]}), "CMS")
+        src = _render_tool(self._entry(request_body_params={"userId": ["1001"]}), "PORTAL")
         assert "userId: int | None = None" in src
 
 

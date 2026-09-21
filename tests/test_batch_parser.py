@@ -18,23 +18,23 @@ from webapi_extractor.analyzer import (  # noqa: E402
     _parse_multipart_requests,
 )
 
-# 真实抓包中的形态：LF 换行，postData 即 multipart 原文
+# 抓包中的形态：LF 换行，postData 即 multipart 原文
 LF_BATCH = (
-    "--batch_1789793871350\n"
+    "--batch_1700000000000\n"
     "Content-Type: application/http\n"
     "Content-Transfer-Encoding: binary\n"
     "\n"
     "GET /api/data/v9.0/cr_sampleitems(000000aa)?$select=new_name HTTP/1.1\n"
     "Prefer: odata.include-annotations=\"*\"\n"
     "\n"
-    "--batch_1789793871350\n"
+    "--batch_1700000000000\n"
     "Content-Type: application/http\n"
     "Content-Transfer-Encoding: binary\n"
     "\n"
     "GET /api/data/v9.0/annotations?fetchXml=%3cfetch%3e HTTP/1.1\n"
     "Accept: application/json\n"
     "\n"
-    "--batch_1789793871350--\n"
+    "--batch_1700000000000--\n"
 )
 
 CRLF_BATCH = LF_BATCH.replace("\n", "\r\n")
@@ -54,7 +54,7 @@ def test_parses_odata_multipart_crlf() -> None:
 
 
 def test_parses_with_content_type_boundary() -> None:
-    subs = _parse_multipart_requests(LF_BATCH, 'multipart/mixed; boundary="batch_1789793871350"')
+    subs = _parse_multipart_requests(LF_BATCH, 'multipart/mixed; boundary="batch_1700000000000"')
     assert len(subs) == 2
 
 

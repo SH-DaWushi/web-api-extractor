@@ -15,7 +15,7 @@ SECRET_FIELD_NAMES = {"password", "passwd", "pwd", "secret", "captcha_code"}
 TOKEN_FIELD_PATTERN = re.compile(r"(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key|secret)", re.I)
 LOGIN_PATH_PATTERN = re.compile(r"(?:^|/)(?:login|signin|sign-in|auth|session|token|oauth)(?:/|$)", re.I)
 
-# 复合命名的凭据字段：user_password / login_password / oldPwd / secretKey ……
+# 复合命名的凭据字段：login_password / oldPwd / secretKey / user_passwd ……
 # 只做精确匹配会全部漏掉，而它们与 password 同等敏感。
 _SECRET_MARKERS = ("password", "passwd", "pwd", "secret", "passcode")
 

@@ -19,12 +19,11 @@ class TestSecretFieldNames:
 
     @pytest.mark.parametrize("name,expected", [
         ("password", True),
-        ("user_password", True),      # 传统 OA 系统 的实际字段名
+        ("user_password", True),      # 复合命名：含 password 但不精确匹配
         ("login_password", True),
         ("oldPwd", True),
         ("secretKey", True),
         ("captcha_code", True),
-        ("username", False),
         ("username", False),
         ("page", False),
     ])

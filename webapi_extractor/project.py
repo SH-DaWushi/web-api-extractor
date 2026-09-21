@@ -156,7 +156,7 @@ def session_to_registry_entries(analysis: dict[str, Any], session_id: str, inclu
             "path": path,
             "path_params": path_params,
             "query_params": endpoint.get("query_params", {}) or {},
-            # Issue #23: 表单编码体字段（传统 OA等传统系统的实际传参方式）
+            # Issue #23: 表单编码体字段（传统服务端渲染系统的实际传参方式）
             "request_body_params": endpoint.get("request_body_params") or {},
             "sample_count": int(endpoint.get("sample_count", 1)),
             "request_schema": endpoint.get("request_schema"),

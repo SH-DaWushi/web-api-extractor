@@ -15,7 +15,7 @@ IPv6 字面量**（如 ``[::1]``），解析直接抛::
 
 Cherry Studio 默认写入的 ``NO_PROXY`` 两种形式都有::
 
-    NO_PROXY=localhost,127.0.0.1,::1,windows10.corp.example,[::1]
+    NO_PROXY=localhost,127.0.0.1,::1,<你的机器域名>,[::1]
 
 于是任何用默认 ``trust_env=True`` 的客户端都会在构造时崩溃。
 

@@ -6,6 +6,6 @@
 - **噪音标记**（`noise: true`，不删除，生成时默认跳过）：埋点/心跳/面包屑/菜单配置/第三方统计域名；
 - **命名参数化**：单样本数字段也参数化（`/user/127733/info` → `/user/{user_id}/info`），同构自动合并；
 - **登录接口识别**：识别「账号+密码换 token」接口 → `auth_login`（含密码加密策略与 PEM 公钥提取），生成阶段转为 `login()`/`auth_status()` 专用工具；
-- **站点档案**：example 等已知站点自动应用语义化命名与中文描述（`site_profiles/`）。
+- **站点档案**：可选的 `site_profiles/` 让已知站点自动应用语义化命名与中文描述；仓库不内置任何档案，按需自建。
 
 用 `update_endpoint(session_id, endpoint_id, description=...)` 补充/修正描述。

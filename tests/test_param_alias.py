@@ -2,8 +2,12 @@
 """Issue #8 回归测试：站点专属参数别名不得污染通用分析器。
 
 修复前 PARAM_ALIAS 全局硬编码 {"is_my": "article_id", "content_meta": "content_meta_id",
-"read": "message_id", ...}，对所有站点生效。修复后这些别名移入 example 档案，
-通用层只保留 id/page。
+"read": "message_id", ...}，对所有站点生效。修复后这些别名移出通用层，
+通用层只保留 id/page；站点专属语义只能由**该站点自己的档案**提供。
+
+注：本文件原先用某个具体站点的档案做「命名与基线逐字一致」的对照。该档案已从
+仓库移除，那两个用例随之删除；站点专属别名是否生效，改由下面基于通用档案的
+用例覆盖，不再绑定任何真实站点。
 """
 from __future__ import annotations
 
@@ -14,42 +18,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from webapi_extractor.analyzer import (  # noqa: E402
-    _is_id_segment,
     PARAM_ALIAS,
     parameterize,
 )
 
-JX3BOX_HOST = "api.example.com"
 OTHER_HOST = "other.example.com:8443"
+SITE_HOST = "site.example.com"
 
-# 修复前的通用别名（git 基线原值），用于等价性对照。
-LEGACY_ALIAS = {"is_my": "article_id", "content_meta": "content_meta_id",
-                "read": "message_id", "id": "id", "page": "page"}
-
-
-def legacy_parameterize(path: str) -> tuple[str, list[str]]:
-    """逐字复刻修复前的 parameterize()，仅别名表用 LEGACY_ALIAS。"""
-    segs = path.split("/")
-    out: list[str] = []
-    names: list[str] = []
-    for i, seg in enumerate(segs):
-        if not (_is_id_segment(seg) or re.fullmatch(r"\{[^}]+\}", seg)):
-            out.append(seg)
-            continue
-        if re.fullmatch(r"\{[^}]+\}", seg):
-            out.append(seg)
-            continue
-        prev = segs[i - 1] if i > 0 else ""
-        base = re.sub(r"[^a-z0-9]+", "_", prev.lower()).strip("_")
-        name = LEGACY_ALIAS.get(base) or (base + "_id" if base else "id")
-        if name in names:
-            name = f"{name}_{names.count(name) + 1}"
-        names.append(name)
-        out.append(f"{{{name}}}")
-    return "/".join(out), names
-
-
-JX3BOX_PATHS = [
+# 这些路径形态取自真实抓包（连字符、下划线数字、层次较深的长段），
+# 用来确保通用命名在这些形态下稳定——但不再指向任何具体站点。
+SAMPLE_PATHS = [
     "/api/article/favorites/is-my/12782/achievement",
     "/api/article/favorites/is-my/12782/bps",
     "/api/article/favorites/is-my/12782/collection",
@@ -71,19 +49,22 @@ def test_generic_alias_has_no_site_specific_names() -> None:
     assert PARAM_ALIAS == {"id": "id", "page": "page"}
 
 
-def test_example_naming_unchanged_vs_baseline() -> None:
-    """已收录站点的命名结果与修复前逐字符一致。"""
-    for path in JX3BOX_PATHS:
-        assert parameterize(path, JX3BOX_HOST) == legacy_parameterize(path), path
+def test_generic_naming_is_stable_across_sample_paths() -> None:
+    """通用命名在这些路径形态上稳定：重复调用结果一致，且只产出通用名。"""
+    for path in SAMPLE_PATHS:
+        first = parameterize(path, OTHER_HOST)
+        assert parameterize(path, OTHER_HOST) == first, path
+        assert all(re.fullmatch(r"[a-z0-9_]+", name) for name in first[1]), (path, first)
 
 
-def test_example_site_specific_aliases_apply() -> None:
+def test_site_specific_semantics_no_longer_leak_into_other_sites() -> None:
+    """核心回归：曾经被误命名的路径，对无关站点只能得到通用名。"""
     assert parameterize("/api/article/favorites/is-my/12782/achievement",
-                        JX3BOX_HOST)[1] == ["article_id"]
+                        OTHER_HOST)[1] == ["is_my_id"]
     assert parameterize("/api/next2/userdata/messages/read/998",
-                        JX3BOX_HOST)[1] == ["message_id"]
+                        OTHER_HOST)[1] == ["read_id"]
     assert parameterize("/api/next2/userdata/commit-history/content-meta/6463/commit/history",
-                        JX3BOX_HOST)[1] == ["content_meta_id"]
+                        OTHER_HOST)[1] == ["content_meta_id"]
 
 
 def test_unrelated_site_not_misnamed() -> None:
@@ -111,3 +92,26 @@ def test_site_can_override_and_extend_generic_alias() -> None:
     assert merged["id"] == "custom_id"   # 站点可覆盖
     assert merged["read"] == "read"      # 通用项保留
     assert merged["extra"] == "extra_id"  # 站点可扩展
+
+
+def test_every_registered_site_profile_actually_exists() -> None:
+    """注册表里的每个档案模块都必须真的存在。
+
+    否则 get_profile() 抛 ModuleNotFoundError，而调用方
+    （analyzer._load_site_profile）把它吞成 None —— 站点档案功能静默失效，
+    外面完全看不出问题。
+    """
+    import importlib
+
+    from webapi_extractor.site_profiles import _REGISTRY
+
+    for module_name in _REGISTRY.values():
+        importlib.import_module(f".{module_name}", package="webapi_extractor.site_profiles")
+
+
+def test_profile_lookup_is_safe_without_profiles() -> None:
+    """没有档案注册时，任意 host 都应安全地走通用路径。"""
+    from webapi_extractor.site_profiles import get_profile
+
+    assert get_profile(SITE_HOST) is None
+    assert get_profile("") is None

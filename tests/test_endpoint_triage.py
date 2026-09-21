@@ -22,7 +22,7 @@ from webapi_extractor.generator import _safe_default_query
 
 class TestOdataBoundFunction:
     @pytest.mark.parametrize("path,expected", [
-        # 真实抓到的两个绑定函数
+        # 抓到的两个绑定函数形态
         ("/api/data/v9.0/systemusers(000000aa)/Microsoft.Dynamics.CRM.RetrievePrincipalAccess", True),
         ("/api/data/v9.0/activitypointers/Microsoft.Dynamics.CRM.RetrieveTimelineWallRecords", True),
         # 普通集合端点
@@ -30,10 +30,10 @@ class TestOdataBoundFunction:
         ("/api/data/v9.0/cr_sampleitems", False),
         ("/api/data/v9.0/cr_sampleitems(00000000-0000)", False),
         # 静态资源不应误判（含点号）
-        ("/uclient/blank.htm", False),
+        ("/static/blank.htm", False),
         ("/_static/blank.htm", False),
         ("/api/data/v9.0/dashboard.aspx", False),
-        ("/AppWebServices/SampleService.asmx/Report", False),
+        ("/WebServices/SampleService.asmx/Report", False),
         ("/res/x.js", False),
     ])
     def test_detection(self, path, expected):

@@ -380,8 +380,8 @@ def _render_tool(entry: dict, prefix: str) -> str:
         params.append(_param_decl(ident, _infer_type(values), values, sample_count))
 
     # Issue #23: 表单编码体字段 → 具名参数（与 query 参数同一套类型推断与默认值
-    # 门槛）。传统 OA 系统 等传统系统全靠 POST 体传参，此前参数全丢，工具能连通
-    # 但必然业务报错（实测 "业务报错"）。
+    # 门槛）。传统服务端渲染系统的接口全靠 POST 体传参，此前参数全丢，
+    # 工具能连通但必然业务报错。
     form_params = entry.get("request_body_params") or {}
     for key, values in form_params.items():
         ident = _py_ident(key)
@@ -657,7 +657,7 @@ async def _request(host: str, method: str, path: str, *, params: dict | None = N
                    _retried_auth: bool = False) -> Any:
     headers = {"Accept": "application/json, text/plain, */*"}
     headers.update(_auth_headers(host))
-    # Issue #23: 表单编码体通道。传统 OA 系统 等传统系统的接口只认
+    # Issue #23: 表单编码体通道。传统服务端渲染系统的接口只认
     # application/x-www-form-urlencoded，发 JSON 会得到业务错误。
     # httpx 只在未显式设置时才补 Content-Type，故这里可安全指定 charset。
     if form_body is not None:
@@ -831,7 +831,7 @@ def render_server(registry: dict) -> dict:
             desc = scheme
             token_hosts.add(h)
         elif cookie_hosts.get(h):
-            # 纯 Cookie 鉴权站点（如传统 OA 系统）：scheme 为空**不等于**公开接口，
+            # 纯 Cookie 鉴权站点：scheme 为空**不等于**公开接口，
             # 接口实测仍需登录后的 Cookie。这里若按 scheme 判会误报成「公开接口」。
             desc = f"Cookie（{', '.join(cookie_hosts[h])}）"
         elif h in auth_required_hosts:
@@ -849,7 +849,7 @@ def render_server(registry: dict) -> dict:
     if any((i or {}).get("scheme") == "Basic" for i in hosts.values()):
         lines += [f"- Basic 站点还需在 `.env` 填 `{prefix}_BASIC_PASSWORD_<HOST>`（base64 拼法中的 password 部分）。"
                   "它通常是前端 JS 里的固定字符串：在抓包会话的 scripts/ 目录搜 `btoa(` 或 `auth:{`，"
-                  "例如 example 是 `api/REDACTED-BASIC-PASSWORD`。", ""]
+                  "从命中的那段里取出 base64 解码后的 password 部分即可。", ""]
     lines += ["## 工具清单", "", "| 工具 | 方法 | Host | 路径 | 说明 |", "|---|---|---|---|---|"]
     for e in endpoints:
         m = "**[MUTATING]** " if e.get("method") not in ("GET", "HEAD") else ""
