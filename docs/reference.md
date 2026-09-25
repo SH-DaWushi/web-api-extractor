@@ -367,7 +367,7 @@ WebAPIExtractor/
 ├─ LICENSE                      # 自拟使用条款（非 SPDX / OSI）
 ├─ .gitignore / .gitattributes  # 忽略运行产物；锁定行尾（*.sh 必须为 LF）
 ├─ .vscode/mcp.json             # 把本服务注册为 stdio MCP（无本机绝对路径）
-├─ tests/                       # pytest 套件（22 个文件）
+├─ tests/                       # pytest 套件（25 个文件）
 └─ webapi_extractor/
    ├─ __main__.py               # CLI：doctor | serve-http |（默认）stdio
    ├─ server.py                 # MCP Server 与工具注册
@@ -405,8 +405,10 @@ python -m pytest tests -q
   此时需自行安装，否则 `asyncio_mode=auto` 会被静默忽略、异步用例全部失败。
 - 套件是单元级的，**不会启动浏览器**。
 - **测试没覆盖什么**（如实说明，别把「没测到」当成「没问题」）：
-  - `tests/` 从不 import `server.py` —— **21 个 MCP 工具层本身无测试**；
-  - `doctor.py`、`generator.generate` / `regenerate`、`project.merge_registry` / `diff_hosts` /
-    `export_user_package` 均无测试 ⇒ 迭代链路（`runbook/06-iterate.md`）、用户态隔离、
-    locked 拒绝都**只有实现、没有验证**；
+  - `server.py` 的**会话与抓包类**工具（probe / login / capture / analyze / update_endpoint /
+    extract_crypto）仍无测试 —— 它们要真实浏览器；**项目类 4 个工具与 doctor 已覆盖**
+    （`tests/test_iterate_tools.py`、`tests/test_doctor.py`，导入 `server.py` 前把数据目录
+    指到临时目录，不碰本机 `~/.webapiextractor`）；
+  - 迭代链路（`runbook/06-iterate.md`）、用户态隔离、`locked` 拒绝由
+    `tests/test_iterate_chain.py` 覆盖（此前无覆盖，本轮补上）；
   - `test_proxy_env.py` 有一条 POSIX-only 用例，在 Windows 上会被 skip（属预期）。
