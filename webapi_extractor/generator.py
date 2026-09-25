@@ -127,8 +127,8 @@ def _auth_headers(host: str) -> dict:
 def _render_auth_login_tools(auth_login: dict, prefix: str) -> str:
     """生成 login / auth_status 工具。
 
-    凭据来源优先级：调用参数 > 环境变量。密码只在内存中用于换取 token，
-    既不落盘也不写审计日志。
+    凭据来源优先级：调用参数 > 环境变量 > 加密缓存。密码用于换取 token，并随凭据一起
+    加密缓存（Windows DPAPI，见文件末尾说明）；审计日志只记录脱敏账号与加密策略。
     """
     acct, pwd = auth_login["account_field"], auth_login["password_field"]
     tpath = ".".join(auth_login["token_path"])
@@ -140,7 +140,7 @@ def _render_auth_login_tools(auth_login: dict, prefix: str) -> str:
     lines = [
         "",
         "# --------------------------------------------------------------------------- #",
-        "# 登录（账号密码换取 token，仅存进程内存）",
+        "# 登录（账号密码换取 token）",
         "# --------------------------------------------------------------------------- #",
         "",
         "def _dig(obj: Any, path: list) -> Any:",
@@ -781,7 +781,8 @@ def render_server(registry: dict) -> dict:
         env_lines += [
             "# ── Cookie 鉴权 ──────────────────────────────────────────────",
             "# 抓到该站使用 Cookie 鉴权。填**整串**（分号分隔）最省事，",
-            "# 值可在 web-api-extractor 的 auth_states/<site>.json 里找到。",
+            "# 值可在 web-api-extractor 的 auth_states/<site_key>.json 里找到"
+            "（文件名 = netloc 的 `.`/`:` 换成 `_`）。",
         ]
         for h, names in sorted(cookie_hosts.items()):
             env_lines += [
@@ -843,7 +844,7 @@ def render_server(registry: dict) -> dict:
         lines += ["", f"- token 统一配置在 `.env` 的 `{prefix}_TOKEN`。"]
     if cookie_hosts:
         lines += ["", f"- Cookie 整串配置在 `.env` 的 `{prefix}_COOKIE_<HOST>`（分号分隔，推荐）；"
-                      "取值见 web-api-extractor 的 `auth_states/<site>.json`。"
+                      "取值见 web-api-extractor 的 `auth_states/<site_key>.json`（netloc 的 `.`/`:` 换成 `_`）。"
                       "Cookie 过期后重跑一次 `open_browser_login` 覆盖该文件即可，"
                       "无需重建项目、无需重抓接口。"]
     if any((i or {}).get("scheme") == "Basic" for i in hosts.values()):
@@ -865,7 +866,7 @@ def render_server(registry: dict) -> dict:
                   f"1. **环境变量**（推荐）：在 `.env` 填 `{prefix}_ACCOUNT` / `{prefix}_PASSWORD`，"
                   "之后调用 `login()` 无需传参。",
                   "2. **交互式**：直接调用 `login(account=\"...\", password=\"...\")`。", "",
-                  f"成功后 token 取自响应字段 `{tp}`，**只保存在服务进程内存中，不写入磁盘**；",
+                  f"成功后 token 取自响应字段 `{tp}`，并加密缓存到 `token_cache.bin`（见下），重启自动恢复；",
                   f"也可以跳过登录，直接把浏览器里取到的 token 填进 `{prefix}_TOKEN`。", "",
                   "`auth_status()` 可查看当前 token 来源与是否有效（只读，不会触发登录）。", ""]
         enc = auth_login.get("password_encryption") or {}

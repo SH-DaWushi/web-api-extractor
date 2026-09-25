@@ -27,7 +27,8 @@ install_method: upload
 
 ## 关键限制（硬规则）
 
-- **步骤 5 不可跳过**：抓包里的凭据值必然被脱敏为 `***`，明文/密文不可区分，禁止假设，必须核实。
+- **步骤 5 不可跳过**：抓包中 JSON / 表单编码请求体里的凭据值被脱敏为 `***`，明文/密文不可区分，
+  禁止假设，必须核实。（URL 与响应体**不**脱敏，别据此认定抓到的是明文。）
 - **登录完成必须由用户确认**：`open_browser_login` 后先问用户是否已登录完成，得到答复再调
   `confirm_login`；抓包未带 `auth_state_path` 时，问用户后再调 `confirm_login_ready`。
   不便在对话里问时，改用 `request_login_confirm_dialog` / `request_capture_confirm_dialog`
@@ -48,3 +49,5 @@ install_method: upload
 | `runbook/06-iterate.md` | 增量合并、锁定、用户态隔离 | IT 管理态迭代 |
 | `runbook/90-reference.md` | 数据目录、环境变量 | 查配置/路径时 |
 | `runbook/99-troubleshooting.md` | 排错速查 | 出问题时 |
+
+> 能力边界（做不到什么）、平台限制、安全语义与工具参数速查见 `docs/reference.md`。

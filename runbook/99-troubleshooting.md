@@ -13,8 +13,12 @@
 | doctor 报缺 Chromium | 内核未装 | `python -m playwright install chromium` 或 `doctor --install` |
 | pip 报 `WinError 1392` / dist-info 损坏 | 全局 user site 损坏 | 用 bootstrap 的独立 `.venv` |
 | `analyze_traffic` 摘要不够看 | 完整 Schema 更大 | 读返回里的 `full_result_path`（analysis.json） |
-| 端口 8422 被占 | 服务已在跑或冲突 | 复用已运行服务，或改 `run_http.py` 端口 |
-| 生成的工具 401 / 跳回登录页 | Cookie 已过期 | 重新触发一次 `open_browser_login` 完成交互式登录，覆盖同一 `auth_states/<site>.json`；无需重建项目 |
+| 端口 8422 被占 | 服务已在跑或冲突 | 复用已运行服务；换端口用 `python start_server.py --port 8423` |
+| 生成的工具没有参数 / 没有响应 Schema | 响应体超过 `WEB_API_EXTRACTOR_RESPONSE_LIMIT`（默认 256 KB），超限**整条丢弃**（不是截断） | 调高该变量后重抓一轮（reference「数据目录体积与响应上限语义」） |
+| 抓包记录目录越来越大 | `capture.jsonl` 只追加、无轮转，静态资源也写 | 人工清理不需要的 `sessions/<id>/`（同上节） |
+| 非 Windows 上重启后 token 丢了 | DPAPI 不可用，加密缓存退化为仅内存 | 属预期行为，每次重启需重新 `login()`（reference「平台矩阵」） |
+| 上传文件的接口做不出来 | `multipart/form-data` 的上传体不解析为参数、也不脱敏 | 不支持，见 reference「能力边界」 |
+| 生成的工具 401 / 跳回登录页 | Cookie 已过期 | 重新触发一次 `open_browser_login` 完成交互式登录，覆盖同一 `auth_states/<site_key>.json`；无需重建项目 |
 | 生成的工具 401 | Basic 口令没填 | scheme 已按实测生成；在 `.env` 填 `<前缀>_BASIC_PASSWORD_<HOST>`（抓包 scripts/ 搜 `btoa(` 找固定串）与 token |
 | merge/regenerate 被拒 `project_locked` | 项目被锁定 | 人工编辑 project.json 的 locked 字段解锁 |
 | 生成的工具 401 后未自动重登录 | 无登录配置或无凭据 | 确认 auth_login 已识别；调用一次 login() 或在 .env 配凭据（之后走加密缓存） |

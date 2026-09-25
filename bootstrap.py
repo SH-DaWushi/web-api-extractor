@@ -45,7 +45,7 @@ def main() -> int:
 
     print()
     print("引导完成。后续用法：")
-    print(f"  启动服务:  {venv_py} run_http.py")
+    print(f"  启动服务:  {venv_py} start_server.py")
     print(f"  调用工具:  {venv_py} mcp_call.py <tool_name> '<json-args>'")
     return rc
 

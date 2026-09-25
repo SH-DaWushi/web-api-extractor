@@ -13,7 +13,11 @@
 → export_project(project_dir, out_dir)                      # 导出用户态分发包
 ```
 
-安全语义：
-- **用户态物理隔离**：分发包的 server.py 不含也不 import 任何 registry 写入代码——Agent 无法通过子 MCP 修改工具集，只能调用与只读诊断；
-- **locked**：`project.json` 置 `locked:true` 后 merge/regenerate 均拒绝，解锁须人工改文件；
-- 端点一轮没抓到只标 `unseen_since`，**永不自动删除**；合并只增不改默认值（向后兼容）；鉴权 scheme 变化必须 `allow_auth_change=true` 显式确认。
+- `diff_capture` 只比对**新增端点**、**query 参数名集合的变化**与**本轮未见端点**；它不报值变化，
+  也不看请求体。**要不要合并由用户拍板**——先把报告讲给用户听，再动手合并。
+- 参数提示：`merge_capture(..., endpoint_keys=[...])` 可只合并选定端点；**鉴权 scheme 发生变化时
+  必须显式传 `allow_auth_change=true`**（默认拒绝，防止鉴权方式被静默改写）。
+- 安全语义（用户态隔离 / `locked` / `unseen_since` 永不自动删除）见 `docs/reference.md` 的
+  「生成的子 MCP 自带的能力」——**那里是唯一权威描述**。
+- ⚠️ 这条链路（merge / regenerate / export / 用户态隔离 / locked）目前**没有测试覆盖**，
+  属"只有实现、没有验证"的部分（见 reference「测试」）。改动后请人工核对生成物。
