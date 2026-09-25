@@ -55,7 +55,8 @@ python mcp_call.py <tool_name> '<json_arguments>'
 > `start_server.py` 用 `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP |
 > CREATE_BREAKAWAY_FROM_JOB` 让服务彻底独立，并把日志与 PID 落盘。
 
-`mcp_call.py` 会把会话 id 缓存到 `.mcp_session`，多次调用复用同一服务进程（会话状态在内存里，**服务不能中途重启**）。
+`mcp_call.py` 会把会话 id 缓存到 `.mcp_session`，多次调用复用同一服务进程（会话状态在内存里）。
+**服务中途重启会让已缓存的会话失效**，但驱动脚本检测到后会重新初始化会话并自动重试一次。
 
 > **Windows 传参**：JSON 里路径用正斜杠 `C:/dir/file.json`（反斜杠破坏 JSON 转义）；复杂参数一律走 `@file` / stdin。
 

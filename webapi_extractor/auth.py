@@ -198,8 +198,8 @@ class LoginManager:
                 # 这三层本就不依赖页内控制条，去掉后同时消除了对目标页面的脚本注入。
                 page = await record.context.new_page()
                 await page.goto(record.url, wait_until="domcontentloaded", timeout=30000)
-                # Issue #20: 登录页往往自己就设 JSESSIONID / PHPSESSID /
-                # PHPSESSID 这类会话 Cookie。先让页面沉降、把它们收进基线；此后
+                # Issue #20: 登录页往往自己就设 JSESSIONID / PHPSESSID 这类会话
+                # Cookie。先让页面沉降、把它们收进基线；此后
                 # 证据要求「相对基线新增或值变化」，登录页的 Cookie 便不再误触发
                 # （修复前会在 ~6 秒后误判 completed 并关掉浏览器）。
                 await page.wait_for_timeout(2000)

@@ -6,19 +6,19 @@
 
 ```
 <output_dir>/
-├─ project.json / registry.json   # registry 为唯一事实源
+├─ project.json / registry.json   # registry 由 merge 维护，版本号随每次合并 +1
 ├─ server.py                       # 多域名路由 + 类型化参数 + 按实测 scheme 鉴权
 ├─ requirements.txt / .env.example / README.md / smoke_test.py
 └─ captures/                       # 各轮合并的 provenance
 ```
 
-生成器能力：
-- **多域名路由** + **类型化签名**（query/path 样本 → `page: int = 1`）；
-- **默认值门槛**：仅多轮采样稳定、短、纯 ASCII、无逗号且非身份/时间类的参数才有默认值（防隐私泄漏与过期默认值）；
-- **鉴权按实测**：Basic/Bearer/Cookie 分别生成；
-- **写操作护栏**：非 GET 工具需 `confirm=true`，写 audit.log；
-- **登录工具**（识别到 auth_login 时）：`login()` / `auth_status()`——凭据与 token **DPAPI 加密持久化**（`cred_cache.bin`/`token_cache.bin`，仅同一 Windows 用户可解密，已列 .gitignore），重启自动恢复，**401 自动重登录并重试一次**；密码按前端实测策略加密传输；
-- **用户态诊断**：`tool_catalog`（含 registry_version）/ `error_log_tail`。
+> ⚠️ `regenerate_server` **只重渲染代码与文档，不写 `registry.json`**（重新渲染时它会主动移除
+> registry.json，因为"registry 归 merge 管"）。所以别指望 regenerate 更新 registry ——
+> 端点的增改一律走 `diff_capture` → `merge_capture`（见 `runbook/06-iterate.md`）。
+
+生成器的完整能力清单（多域名路由、类型化签名与默认值门槛、鉴权 scheme、登录工具与续期语义、
+写操作护栏、只读诊断）见 `docs/reference.md` 的「生成的子 MCP 自带的能力」——**那里是唯一权威描述**。
+一句话提醒：`login()` 与 401 自动重登录**只在识别到 `auth_login` 时才生成**。
 
 ## Basic 口令验证（必做）
 
