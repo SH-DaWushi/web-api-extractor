@@ -67,6 +67,49 @@ class TestInstallInstructions:
                 "README 提到了 zip，却没写它从哪下载"
 
 
+class TestComparisonDiagramHonest:
+    """对比图不能把「用本技能」画得比手工更麻烦。
+
+    读者先看图、再看表，所以图会在**没被察觉**的情况下传达相反结论：历史上这张图里
+    技能那条道画了 7 个框、每个框还塞满子任务（参数化 / Schema / 脱敏 / 加密识别），
+    传统那条只有 6 个 —— 看图的第一印象是「用技能更累」，与下面那张对比表正好相反。
+
+    因此这里断言两件事：图必须写出两条路各自「你要动手几步」且本技能的更少；
+    必须标出哪些步骤是自动的。不锁图形样式与文案措辞。
+    """
+
+    BLOCK = re.search(r"```mermaid\n(.*?)```", REFERENCE, re.S)
+    DIAGRAM = BLOCK.group(1) if BLOCK else ""
+
+    def _counts(self) -> dict[str, int]:
+        return {label: int(n) for label, n in
+                re.findall(r"(传统做法|用本技能)[^\]]*你要动手\s*(\d+)\s*步", self.DIAGRAM)}
+
+    def test_diagram_present(self):
+        assert self.DIAGRAM, "reference 里的对比图不见了"
+
+    def test_declares_manual_step_counts(self):
+        counts = self._counts()
+        assert set(counts) == {"传统做法", "用本技能"}, \
+            f"图里没写清两条路各要动手几步（读图的人只能自己数框）：{counts}"
+
+    def test_skill_needs_fewer_manual_steps(self):
+        counts = self._counts()
+        assert int(counts["用本技能"]) < int(counts["传统做法"]), \
+            f"图上「用本技能」要动手 {counts['用本技能']} 步、传统 {counts['传统做法']} 步，读起来反而更累"
+
+    def test_automatic_steps_are_labelled(self):
+        assert "自动" in self.DIAGRAM, "图里没标出哪些步骤是自动完成的"
+
+    def test_caption_numbers_match_the_diagram(self):
+        """图下的读图说明与图里的数字不能各说各话。"""
+        counts = self._counts()
+        caption = re.search(r"传统\s*\*\*(\d+)\*\*\s*步\s*→\s*本技能\s*\*\*(\d+)\*\*\s*步", REFERENCE)
+        assert caption, "读图说明里没给出两条路的步数对比"
+        assert (caption.group(1), caption.group(2)) == (str(counts["传统做法"]), str(counts["用本技能"])), \
+            f"图上 {counts}，说明文字 {caption.groups()}"
+
+
 class TestSecurityClaims:
     """README 曾做过与实现相反的承诺，禁止回归。"""
 

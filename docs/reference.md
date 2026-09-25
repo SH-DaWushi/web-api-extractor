@@ -6,28 +6,43 @@
 
 ## 传统开发 vs 用本技能
 
-对接一个「只有网页界面、没有 API」的系统，两条路的差别在这里：
+对接一个「只有网页界面、没有 API」的系统，两条路的差别在这里 ——
+**红框是你要动手的，绿框是工具自己做完的**：
 
 ```mermaid
 flowchart TB
-    subgraph T["传统做法 —— 输入是文档与推测"]
+    subgraph T["传统做法 —— 你要动手 4 步"]
         direction TB
-        T1["找接口文档<br/>（往往不存在）"] --> T2["开 F12 逐条翻请求<br/>猜参数含义"]
-        T2 --> T3["自己写鉴权<br/>Cookie / Basic / 密码加密"]
-        T3 --> T4["手写胶水代码 → 联调 → 上线"]
+        T1["① 找接口文档<br/>（往往不存在）"] --> T2["② 开 F12 逐条翻请求<br/>猜参数含义"]
+        T2 --> T3["③ 自己写鉴权<br/>Cookie / Basic / 密码加密"]
+        T3 --> T4["④ 手写胶水代码 → 联调"]
         T4 -.->|系统改版| T5["几乎全部重做"]
         T4 -.->|登录过期| T6["再实现一遍"]
     end
-    subgraph S["用本技能 —— 输入是你真实的操作"]
+    subgraph S["用本技能 —— 你要动手 2 步"]
         direction TB
-        S1["在浏览器里正常用一遍目标功能"] --> S2["自动记录全部流量<br/>CDP 全量抓包"]
-        S2 --> S3["自动归纳<br/>参数化 / Schema / 噪音标记<br/>凭据脱敏 / 加密识别"]
-        S3 --> S4["生成可运行项目<br/>多域名路由 + 实测鉴权<br/>写操作护栏 + 冒烟测试"]
-        S4 --> S5["上线"]
-        S5 -.->|系统改版| S6["再操作一遍 → diff → merge<br/>只补差异"]
-        S5 -.->|登录过期| S7["重新授权一次<br/>覆盖同一份登录态"]
+        S1["① 完成登录<br/>（在真实浏览器里点一次）"] --> S2["② 正常用一遍目标功能<br/>像平常那样点"]
+        S2 --> S3["自动完成，你不用管：<br/>抓包 → 参数化 / Schema / 噪音标记<br/>凭据脱敏 / 加密识别<br/>→ 生成可运行项目"]
+        S3 -.->|系统改版| S4["再操作一遍 → diff → merge<br/>只补差异"]
+        S3 -.->|登录过期| S5["重新授权一次<br/>覆盖同一份登录态"]
     end
+    T4 --> D["上线"]
+    S3 --> D
+    classDef human fill:#ffe3e3,stroke:#c0392b,stroke-width:2px,color:#000
+    classDef auto fill:#e3f4e4,stroke:#2e7d32,stroke-width:2px,color:#000
+    classDef rework fill:#ffd6d6,stroke:#922b21,stroke-dasharray:5 3,color:#000
+    classDef increment fill:#e8eef7,stroke:#2471a3,stroke-dasharray:5 3,color:#000
+    classDef done fill:#f2f3f4,stroke:#566573,stroke-width:2px,color:#000
+    class T1,T2,T3,T4,S1,S2 human
+    class S3 auto
+    class T5,T6 rework
+    class S4,S5 increment
+    class D done
 ```
+
+> **读图**：红框 = 你要亲手做的事（传统 **4** 步 → 本技能 **2** 步，而且这 2 步就是「登录」和「像平常一样用一遍网站」，不需要敲代码）；
+> 绿框 = 全自动，你不用管；红色虚线 = 传统路线遇到改版/过期的代价（重做），蓝色虚线 = 本技能的代价（只补差异）。
+> 两条路最后都落在同一步「上线」—— 差别只在**上线之前你要亲手做多少**。
 
 ### 具体省在哪
 
