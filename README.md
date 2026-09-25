@@ -48,6 +48,10 @@ WebAPIExtractor 的做法很直接：
 - **拖进对话让 Agent 装** —— 直接把技能文件夹（或 zip）拖进对话，跟 AI 说
   「帮我把这个技能装上」即可。
 
+> zip 从哪来？在 [Releases 页面](https://github.com/SH-DaWushi/web-api-extractor/releases/latest)
+> 下载 `web-api-extractor-agent.zip` —— 它就是技能文件夹本身打成的包，内容一模一样，
+> 只是不用自己去拉整个仓库。
+
 装好后，技能列表里会出现 **web-api-extractor** 这一项。你的 AI 助手从此多了一项能力：
 **陪你在浏览器里完成登录、记录你的操作、并把它们做成工具。**
 

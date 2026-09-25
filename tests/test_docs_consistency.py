@@ -57,6 +57,15 @@ class TestInstallInstructions:
     def test_source_install_documented(self):
         assert "pip install -e ." in REFERENCE
 
+    def test_readme_says_where_to_get_the_zip(self):
+        """README 让使用者「把 zip 拖进技能页」，就必须给出 zip 的下载落点。
+
+        之前只说「（或 zip）」，却没有任何渠道能拿到它 —— 对不懂命令的读者是死路。
+        """
+        if "zip" in README:
+            assert re.search(r"releases/(latest|download)", README), \
+                "README 提到了 zip，却没写它从哪下载"
+
 
 class TestSecurityClaims:
     """README 曾做过与实现相反的承诺，禁止回归。"""
