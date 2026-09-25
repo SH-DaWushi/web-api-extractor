@@ -62,6 +62,8 @@ flowchart TB
 都是**给 Agent 消费**的文件，`docs/reference.md`（本文件）是给人看的技术文档。
 `web-api-extractor-agent.zip` 由 `package-agent.py`（跨平台）或 `package-agent.ps1`（Windows）
 打包 —— 两份脚本的清单与产物一致，用哪份都行；内容与技能文件夹相同。
+**官方包挂在 GitHub Releases**（`v0.1.0` 起，每个 tag 挂一份对应的 zip），使用者直接下载即可，
+不必自己拉仓库再打包。
 
 **B. 从源码用（自己动手 / 二次开发）** —— 本节以下内容都是给这类使用者的。
 **本项目未发布到 PyPI，必须先从源码取用。**
