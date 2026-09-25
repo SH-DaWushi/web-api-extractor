@@ -10,7 +10,9 @@ README / docs/reference.md / runbook 是本仓库唯一的对外说明，但曾�
   `auth_states/*.json`（README 与 reference 互相矛盾）；
 - runbook 让 Agent 按 `auth_mode == "form"` 且 `confidence >= 0.8` 分支，而 `probe.py`
   只返回 none / interactive、confidence 上限 0.75 —— 该判据在任何站点上都不成立；
-- 生成的子项目 README 同时说 token「不写入磁盘」和「DPAPI 加密存入 token_cache.bin」。
+- 生成的子项目 README 同时说 token「不写入磁盘」和「DPAPI 加密存入 token_cache.bin」；
+- README 让使用者自己 `git clone`、跑 `package-agent.ps1`、再 `bootstrap.py` / `start_server.py` ——
+  这些都是 Agent 或技术同事的事，使用者只需要把技能拖进 Agent。
 
 这些错法的共同点是：**把会随代码变化的结论写死在文档里**。因此本文件只断言
 **事实关系**（数字相等、集合包含、链接等于仓库、已证伪的原话不存在），
@@ -187,3 +189,30 @@ class TestDocsMatchCodeInventory:
         """
         from webapi_extractor.site_profiles import _REGISTRY
         assert _REGISTRY == {}
+
+
+class TestReadmeStaysUserFacing:
+    """README 面向使用者，不得让使用者自己装库 / 起服务 / 跑命令。
+
+    使用者的安装动作只有两个：把技能拖进「技能 / Skill」设置页，或拖进对话让 Agent 装。
+    `bootstrap.py`、`start_server.py`、`mcp_call.py`、`pip install` 这些属于 Agent 内部流程
+    或技术人员范畴，只能在 docs/reference.md 里出现（README 可以链接过去）。
+    """
+
+    OPERATOR_ONLY = ("bootstrap.py", "start_server.py", "mcp_call.py", "run_http.py",
+                     "pip install", "uv run", "pytest", "git clone")
+
+    def test_no_operator_commands_in_readme(self):
+        for token in self.OPERATOR_ONLY:
+            assert token not in README, \
+                f"README 是使用者入口，不应出现运维/开发命令：{token}（应放 docs/reference.md）"
+
+    def test_readme_tells_how_to_install_skill(self):
+        """必须写清使用者实际要做的动作，而不是让他去找命令。"""
+        assert "技能" in README
+        assert "拖" in README
+
+    def test_readme_links_reference(self):
+        """README 必须把读者导向技术文档（原先只有一处，还埋在小节末尾）。"""
+        assert "docs/reference.md" in README
+        assert f"{REPO_URL}/blob/main/docs/reference.md" in README

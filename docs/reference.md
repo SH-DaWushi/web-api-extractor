@@ -53,18 +53,24 @@ flowchart TB
 
 ## 安装形态
 
-两种形态，选一种。**本项目未发布到 PyPI，两者都要先从源码取用。**
+**A. 作为技能导入（推荐，使用者走这条）** —— 把技能文件夹（或 `web-api-extractor-agent.zip`
+导入包）拖进 AI 助手的「技能 / Skill」设置页；或直接拖进对话，让 Agent 自己装。
+**使用者不需要装库、也不需要跑任何命令**，首次使用的运行环境（含浏览器内核）由 Agent
+引导完成（见下「环境准备」）。
+
+技能文件夹里的 `SKILL.md`、`runbook/`、`bootstrap.*`、`start_server.py`、`mcp_call.py`
+都是**给 Agent 消费**的文件，`docs/reference.md`（本文件）是给人看的技术文档。
+`web-api-extractor-agent.zip` 由 `package-agent.ps1` 打包，内容与技能文件夹一致。
+
+**B. 从源码用（自己动手 / 二次开发）** —— 本节以下内容都是给这类使用者的。
+**本项目未发布到 PyPI，必须先从源码取用。**
 
 ```bash
 git clone https://github.com/SH-DaWushi/web-api-extractor.git
 cd web-api-extractor
 ```
 
-**A. 作为 Skill / 完整工作流（推荐）** —— 克隆后按 README 的 1–3 步走。
-`SKILL.md`、`runbook/`、`bootstrap.*`、`start_server.py`、`mcp_call.py` 都是仓库内文件
-（Skill 正是按文件消费的），发行包里没有。
-
-**B. 作为 Python 库 / MCP Server** —— 从源码可编辑安装：
+作为 Python 库可编辑安装：
 
 ```bash
 pip install -e .
