@@ -60,7 +60,8 @@ flowchart TB
 
 技能文件夹里的 `SKILL.md`、`runbook/`、`bootstrap.*`、`start_server.py`、`mcp_call.py`
 都是**给 Agent 消费**的文件，`docs/reference.md`（本文件）是给人看的技术文档。
-`web-api-extractor-agent.zip` 由 `package-agent.ps1` 打包，内容与技能文件夹一致。
+`web-api-extractor-agent.zip` 由 `package-agent.py`（跨平台）或 `package-agent.ps1`（Windows）
+打包 —— 两份脚本的清单与产物一致，用哪份都行；内容与技能文件夹相同。
 
 **B. 从源码用（自己动手 / 二次开发）** —— 本节以下内容都是给这类使用者的。
 **本项目未发布到 PyPI，必须先从源码取用。**
@@ -360,13 +361,13 @@ WebAPIExtractor/
 ├─ run_http.py                  # 等价的 HTTP 启动器（勿用后台任务方式直接跑）
 ├─ mcp_call.py                  # MCP 工具驱动（@file / stdin 传参，404 自愈）
 ├─ install-agent.ps1            # 装依赖 + Chromium（供 Agent 导入）
-├─ package-agent.ps1            # 打包成可分发的 zip
+├─ package-agent.py / .ps1      # 打包成可分发的 zip（清单一致，产物相同）
 ├─ pyproject.toml               # 打包元数据（含 license / readme / classifiers）
 ├─ requirements.txt             # 运行 + 测试依赖
 ├─ LICENSE                      # 自拟使用条款（非 SPDX / OSI）
 ├─ .gitignore / .gitattributes  # 忽略运行产物；锁定行尾（*.sh 必须为 LF）
 ├─ .vscode/mcp.json             # 把本服务注册为 stdio MCP（无本机绝对路径）
-├─ tests/                       # pytest 套件（21 个文件）
+├─ tests/                       # pytest 套件（22 个文件）
 └─ webapi_extractor/
    ├─ __main__.py               # CLI：doctor | serve-http |（默认）stdio
    ├─ server.py                 # MCP Server 与工具注册

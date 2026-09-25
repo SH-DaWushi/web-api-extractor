@@ -102,6 +102,21 @@ class TestToolCount:
         assert all(c == actual for c in claims), f"文档声称 {claims}，实际注册 {actual}"
 
 
+class TestFileInventory:
+    """目录树注释里的文件数必须等于磁盘实际数 —— 这类数字最容易漏改。"""
+
+    def test_tests_dir_count_matches_disk(self):
+        claimed = re.findall(r"tests/\s+#\s*pytest 套件（(\d+) 个文件）", REFERENCE)
+        actual = len(list((ROOT / "tests").glob("*.py")))
+        assert claimed, "reference 的目录树里找不到 tests/ 的文件数声明"
+        assert all(int(c) == actual for c in claimed), f"reference 声称 {claimed}，实际 {actual}"
+
+    def test_packaging_scripts_both_documented(self):
+        """加了 .py 版打包脚本后，reference 不能只讲 .ps1（否则非 Windows 找不到出路）。"""
+        for name in ("package-agent.py", "package-agent.ps1"):
+            assert name in REFERENCE, f"reference 未提到 {name}"
+
+
 class TestProbeCriteriaInRunbook:
     """runbook 引用的 probe 判据必须真的可达。"""
 
