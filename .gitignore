@@ -30,7 +30,7 @@ token_cache.bin
 cred_cache.bin
 
 # ── 打包产物 ────────────────────────────────────────────────────────────
-# package-agent.ps1 默认把 zip 写到仓库根（历史上误提交过一次）
+# package-agent.py / .ps1 默认把 zip 写到仓库根（历史上误提交过一次）
 *.zip
 # generator.py 重出文件时留的备份
 *.bak
