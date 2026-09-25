@@ -19,5 +19,6 @@
   必须显式传 `allow_auth_change=true`**（默认拒绝，防止鉴权方式被静默改写）。
 - 安全语义（用户态隔离 / `locked` / `unseen_since` 永不自动删除）见 `docs/reference.md` 的
   「生成的子 MCP 自带的能力」——**那里是唯一权威描述**。
-- ⚠️ 这条链路（merge / regenerate / export / 用户态隔离 / locked）目前**没有测试覆盖**，
-  属"只有实现、没有验证"的部分（见 reference「测试」）。改动后请人工核对生成物。
+- 这条链路（merge / regenerate / export / 用户态隔离 / locked）由 `tests/test_iterate_chain.py`
+  （库层语义）与 `tests/test_iterate_tools.py`（工具层契约）覆盖 —— 改动生成逻辑后跑这两份。
+  仍未覆盖的部分见 reference「测试」。

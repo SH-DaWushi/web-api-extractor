@@ -30,6 +30,7 @@ README = (ROOT / "README.md").read_text(encoding="utf-8")
 REFERENCE = (ROOT / "docs" / "reference.md").read_text(encoding="utf-8")
 SKILL_MD = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 RUNBOOK_AUTH = (ROOT / "runbook" / "01-authentication.md").read_text(encoding="utf-8")
+RUNBOOK_ITERATE = (ROOT / "runbook" / "06-iterate.md").read_text(encoding="utf-8")
 SERVER_SRC = (ROOT / "webapi_extractor" / "server.py").read_text(encoding="utf-8")
 PROBE_SRC = (ROOT / "webapi_extractor" / "probe.py").read_text(encoding="utf-8")
 
@@ -115,6 +116,38 @@ class TestFileInventory:
         """加了 .py 版打包脚本后，reference 不能只讲 .ps1（否则非 Windows 找不到出路）。"""
         for name in ("package-agent.py", "package-agent.ps1"):
             assert name in REFERENCE, f"reference 未提到 {name}"
+
+
+class TestCoverageClaimsMatchTests:
+    """「某某没有测试」是会随代码变化的结论 —— 补了测试就必须改文档。
+
+    这类句子最容易骗人：读者据此以为不必核对，实际早就有测试守着了（反之更糟：
+    以为测过了，其实没有）。判据只看 `tests/` 里是否真的存在对应覆盖，不锁措辞。
+    """
+
+    TESTS = ROOT / "tests"
+
+    def _imports(self, module: str) -> bool:
+        pattern = (rf"(?:from|import)\s+webapi_extractor\.{module}\b"
+                   rf'|import_module\(["\']webapi_extractor\.{module}["\']\)')
+        return any(re.search(pattern, path.read_text(encoding="utf-8"))
+                   for path in self.TESTS.glob("*.py"))
+
+    def test_server_tool_layer_claim_matches_reality(self):
+        if self._imports("server"):
+            assert "工具层本身无测试" not in REFERENCE
+            assert "从不 import" not in REFERENCE
+
+    def test_iterate_chain_claim_matches_reality(self):
+        if (self.TESTS / "test_iterate_chain.py").exists():
+            for text in (REFERENCE, RUNBOOK_ITERATE):
+                assert "没有测试覆盖" not in text
+                assert "只有实现、没有验证" not in text
+
+    def test_documented_untested_modules_really_are_untested(self):
+        """reference 点名的「无测试」模块，不能其实已经被 import 了。"""
+        for module in re.findall(r"`(\w+)\.py`(?:`\s*/\s*`\w+`)*\s*(?:均)?无测试", REFERENCE):
+            assert not self._imports(module), f"reference 说 {module}.py 无测试，实际有测试"
 
 
 class TestProbeCriteriaInRunbook:
