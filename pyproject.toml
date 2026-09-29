@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "web-api-extractor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Extract web APIs into a local FastMCP server"
 readme = "README.md"
 # 自拟条款，非 SPDX/OSI 许可：显式声明让元数据与 LICENSE 一致。
