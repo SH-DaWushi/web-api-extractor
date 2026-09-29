@@ -64,7 +64,7 @@ turning it into tools.**
 > The first run installs a small runtime (including a browser engine), and **the AI does all of it** —
 > you do not need to care. If you really do want to do it by hand (or set it up for a colleague),
 > the environment setup and start commands are in the
-> [technical documentation's "Installation forms" and "Starting the server"](https://github.com/SH-DaWushi/web-api-extractor/blob/main/docs/reference.md).
+> [technical documentation's "Installation forms" and "Starting the server"](https://github.com/SH-DaWushi/web-api-extractor/blob/main/docs/reference.en.md).
 
 ### Step 2 · Tell it what you want, in plain conversation
 
@@ -191,8 +191,8 @@ You do not need to follow what happens in between — that is the AI's job.
 The section above covers "what you get". **Technical details, capability boundaries, and security
 semantics** all live in the technical documentation:
 
-📄 **[docs/reference.md](https://github.com/SH-DaWushi/web-api-extractor/blob/main/docs/reference.md)**
-— the `docs/reference.md` inside the skill folder; the same file.
+📄 **[docs/reference.en.md](https://github.com/SH-DaWushi/web-api-extractor/blob/main/docs/reference.en.md)**
+— the `docs/reference.en.md` inside the skill folder; the same file.
 
 | What you want to know | Chapter |
 |---|---|

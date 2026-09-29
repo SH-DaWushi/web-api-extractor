@@ -85,7 +85,8 @@ page; or drop it straight into the conversation and let the agent install it.
 engine) is set up by the agent (see "Environment setup" below).
 
 Inside the skill folder, `SKILL.md`, `runbook/`, `bootstrap.*`, `start_server.py` and `mcp_call.py`
-are all files **consumed by the agent**; `docs/reference.md` (this file) is the human-facing
+are all files **consumed by the agent**; `docs/reference.en.md` (this file, with the Chinese
+original at `docs/reference.md`) is the human-facing
 technical documentation. `web-api-extractor-agent.zip` is built by `package-agent.py`
 (cross-platform) or `package-agent.ps1` (Windows) — the two scripts have identical manifests and
 identical output, so either will do; the contents match the skill folder.

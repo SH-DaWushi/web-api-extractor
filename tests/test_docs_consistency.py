@@ -388,6 +388,22 @@ class TestEnglishDocsMirrorChinese:
     def test_dead_module_not_documented(self):
         assert "login_detector" not in REFERENCE_EN
 
+    def test_readme_links_english_reference(self):
+        """英文 README 必须把读者导向**英文**技术文档。
+
+        中文版指向 `docs/reference.md`；英文版若照抄同一个 URL，英文读者会被送进
+        中文文档 —— 与「每一版只服务自己语言的读者」这个前提直接矛盾。
+        """
+        assert f"{REPO_URL}/blob/main/docs/reference.en.md" in README_EN
+        assert f"{REPO_URL}/blob/main/docs/reference.md" not in README_EN, \
+            "英文 README 仍指向中文技术文档"
+        assert "docs/reference.en.md" in README_EN
+
+    def test_english_reference_links_english_readme(self):
+        """英文技术文档回链的应是英文 README（反过来同理）。"""
+        assert "(../README.en.md)" in REFERENCE_EN
+        assert "(../README.md)" not in REFERENCE_EN
+
 
 class TestEnglishDiagramMatchesChinese:
     """两版对比图的手工步数必须一致。
