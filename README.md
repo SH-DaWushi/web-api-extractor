@@ -4,6 +4,8 @@
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-custom%20(non--commercial)-orange)
 
+**简体中文** | [English](README.en.md)
+
 **把「只能手动点网页的系统」，变成 AI 能直接调用的工具 —— 你不用写一行代码。**
 
 ---

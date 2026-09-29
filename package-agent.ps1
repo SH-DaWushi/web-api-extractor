@@ -17,6 +17,7 @@ try {
         "pyproject.toml",
         "requirements.txt",
         "README.md",
+        "README.en.md",
         "SKILL.md",
         "docs",
         "runbook",

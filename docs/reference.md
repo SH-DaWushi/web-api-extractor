@@ -1,5 +1,7 @@
 # 技术参考
 
+> **简体中文** | [English](reference.en.md)
+>
 > 面向开发与运维。想快速上手请看 [README.md](../README.md)；Agent 的操作流程见 [SKILL.md](../SKILL.md)。
 
 ---

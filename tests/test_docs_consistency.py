@@ -28,6 +28,8 @@ REPO_URL = "https://github.com/SH-DaWushi/web-api-extractor"
 
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 REFERENCE = (ROOT / "docs" / "reference.md").read_text(encoding="utf-8")
+README_EN = (ROOT / "README.en.md").read_text(encoding="utf-8")
+REFERENCE_EN = (ROOT / "docs" / "reference.en.md").read_text(encoding="utf-8")
 SKILL_MD = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 RUNBOOK_AUTH = (ROOT / "runbook" / "01-authentication.md").read_text(encoding="utf-8")
 RUNBOOK_ITERATE = (ROOT / "runbook" / "06-iterate.md").read_text(encoding="utf-8")
@@ -316,3 +318,123 @@ class TestReadmeStaysUserFacing:
         """README 必须把读者导向技术文档（原先只有一处，还埋在小节末尾）。"""
         assert "docs/reference.md" in README
         assert f"{REPO_URL}/blob/main/docs/reference.md" in README
+
+
+class TestEnglishDocsMirrorChinese:
+    """英文版必须与中文版同源，且不得换个语言把中文版已经改掉的错误再犯一遍。
+
+    断言的是同一批**事实关系**（仓库地址、禁用旧库名、未发布的 PyPI 安装、zip 的
+    下载落点、对比图的手工步数、已证伪的安全承诺），不锁英文措辞 —— 与中文版那批
+    用例同一条原则：只断言事实，改文案不该变红。
+    """
+
+    def test_repo_url_present(self):
+        assert REPO_URL in README_EN
+        assert REPO_URL in REFERENCE_EN
+
+    def test_old_repo_identifier_gone(self):
+        for text in (README_EN, REFERENCE_EN):
+            assert "shdawushi-dotcom" not in text
+            assert "WebAPIExtractor.git" not in text
+
+    def test_no_unpublished_pip_install(self):
+        pattern = re.compile(r"pip\s+install\s+web[-_]?api[-_]?extractor\b")
+        assert not pattern.search(README_EN)
+        assert not pattern.search(REFERENCE_EN)
+
+    def test_source_install_documented(self):
+        assert "pip install -e ." in REFERENCE_EN
+
+    def test_readme_says_where_to_get_the_zip(self):
+        if "zip" in README_EN:
+            assert re.search(r"releases/(latest|download)", README_EN), \
+                "英文 README 提到了 zip，却没写它从哪下载"
+
+    def test_no_operator_commands_in_readme(self):
+        """英文 README 同样是使用者入口，运维/开发命令只能出现在技术文档里。"""
+        for token in TestReadmeStaysUserFacing.OPERATOR_ONLY:
+            assert token not in README_EN, \
+                f"英文 README 不应出现运维/开发命令：{token}（应放 docs/reference.en.md）"
+
+    def test_admits_plaintext_auth_state(self):
+        """中文版承认登录态是明文、且 URL 与响应体不脱敏；英文版必须同样承认。"""
+        assert "auth_states" in README_EN
+        assert "plaintext" in README_EN
+        assert re.search(r"URLs?[^.]{0,40}not redacted", README_EN)
+
+    def test_refuted_claims_absent(self):
+        """被代码证伪的无条件承诺，换一种语言也不得出现。"""
+        for phrase in ("never stored", "never written to disk"):
+            assert phrase not in README_EN, f"已核实为假的说法不得出现：{phrase}"
+
+    def test_tool_count_matches_registration(self):
+        actual = len(re.findall(r"@mcp\.tool\(\)", SERVER_SRC))
+        claims = [int(n) for n in re.findall(r"Tool list \((\d+)\)", README_EN + REFERENCE_EN)]
+        claims += [int(n) for n in re.findall(r"full list of (\d+) tools", README_EN + REFERENCE_EN)]
+        assert actual > 0, "未能从 server.py 数出工具注册，测试本身失效"
+        assert claims, "英文文档必须声明工具总数"
+        assert all(c == actual for c in claims), f"英文文档声称 {claims}，实际注册 {actual}"
+
+    def test_tests_dir_count_matches_disk(self):
+        claimed = re.findall(r"tests/\s+#\s*pytest suite \((\d+) files\)", REFERENCE_EN)
+        actual = len(list((ROOT / "tests").glob("*.py")))
+        assert claimed, "英文 reference 的目录树里找不到 tests/ 的文件数声明"
+        assert all(int(c) == actual for c in claimed), f"英文 reference 声称 {claimed}，实际 {actual}"
+
+    def test_packaging_scripts_both_documented(self):
+        for name in ("package-agent.py", "package-agent.ps1"):
+            assert name in REFERENCE_EN, f"英文 reference 未提到 {name}"
+
+    def test_dead_module_not_documented(self):
+        assert "login_detector" not in REFERENCE_EN
+
+
+class TestEnglishDiagramMatchesChinese:
+    """两版对比图的手工步数必须一致。
+
+    图先于表被看到；两版数字不一致，就等于对两种语言的读者各传达了一个结论。
+    """
+
+    BLOCK = re.search(r"```mermaid\n(.*?)```", REFERENCE_EN, re.S)
+    DIAGRAM = BLOCK.group(1) if BLOCK else ""
+
+    def _counts(self) -> dict[str, int]:
+        return {label: int(n) for label, n in re.findall(
+            r"(Traditional|This skill)[^\]]*you do\s*(\d+)\s*steps yourself", self.DIAGRAM)}
+
+    def test_diagram_present(self):
+        assert self.DIAGRAM, "英文 reference 里的对比图不见了"
+
+    def test_declares_manual_step_counts(self):
+        counts = self._counts()
+        assert set(counts) == {"Traditional", "This skill"}, \
+            f"英文图里没写清两条路各要动手几步（读者只能自己数框）：{counts}"
+
+    def test_skill_needs_fewer_manual_steps(self):
+        counts = self._counts()
+        assert counts["This skill"] < counts["Traditional"], \
+            (f"英文图上「This skill」要动手 {counts['This skill']} 步、"
+             f"传统 {counts['Traditional']} 步，读起来反而更累")
+
+    def test_automatic_steps_are_labelled(self):
+        assert "automatic" in self.DIAGRAM.lower(), "英文图里没标出哪些步骤是自动完成的"
+
+    def test_caption_numbers_match_the_diagram(self):
+        counts = self._counts()
+        caption = re.search(
+            r"traditional\s*\*\*(\d+)\*\*\s*steps\s*→\s*this skill\s*\*\*(\d+)\*\*\s*steps",
+            REFERENCE_EN)
+        assert caption, "英文读图说明里没给出两条路的步数对比"
+        assert (caption.group(1), caption.group(2)) == \
+               (str(counts["Traditional"]), str(counts["This skill"])), \
+            f"英文图上 {counts}，说明文字 {caption.groups()}"
+
+    def test_same_numbers_as_chinese(self):
+        """中英两版的步数必须相同，否则两种语言的读者会读到不同的结论。"""
+        cn_block = re.search(r"```mermaid\n(.*?)```", REFERENCE, re.S)
+        cn = dict(re.findall(r"(传统做法|用本技能)[^\]]*?你要动手\s*(\d+)\s*步",
+                             cn_block.group(1) if cn_block else ""))
+        en = self._counts()
+        assert cn and en, f"两版都必须能解析出步数：中文 {cn} 英文 {en}"
+        assert int(cn["传统做法"]) == en["Traditional"], f"传统步数 中{cn} 英{en}"
+        assert int(cn["用本技能"]) == en["This skill"], f"本技能步数 中{cn} 英{en}"
