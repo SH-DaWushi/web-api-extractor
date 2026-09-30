@@ -26,7 +26,7 @@ python bootstrap.py --with-tests
 bash ./bootstrap.sh [--with-tests]
 ```
 
-venv 建在**数据目录**下（`<数据目录>/venv`，默认 `~/.webapiextractor/venv`），**不在技能文件夹里**——
+venv 建在**数据目录**下（`<数据目录>/venv`，默认 `~/.scry/venv`），**不在技能文件夹里**——
 技能目录会被宿主应用重新同步/替换，放进去的 venv 可能被连带删除。若技能目录里还留着历史的
 `.venv`，引导会**直接复用它**。`start_server.py` 取解释器的顺序同样是
 **数据目录 venv → 技能目录旧 `.venv` → 当前解释器**。
@@ -34,8 +34,8 @@ venv 建在**数据目录**下（`<数据目录>/venv`，默认 `~/.webapiextrac
 已装过环境时，只做自检：
 
 ```bash
-python -m webapi_extractor doctor            # 检查
-python -m webapi_extractor doctor --install  # 检查并自动补装缺失项
+python -m scry_mcp_gen doctor            # 检查
+python -m scry_mcp_gen doctor --install  # 检查并自动补装缺失项
 ```
 
 doctor 全绿（端口 WARN 可忽略）后再继续。
@@ -77,4 +77,4 @@ python mcp_call.py <tool_name> '<json_arguments>'
 
 > **Windows 传参**：JSON 里路径用正斜杠 `C:/dir/file.json`（反斜杠破坏 JSON 转义）；复杂参数一律走 `@file` / stdin。
 
-数据目录默认 `~/.webapiextractor`，可用环境变量覆盖（见 `runbook/90-reference.md`）。
+数据目录默认 `~/.scry`，可用环境变量覆盖（见 `runbook/90-reference.md`）。

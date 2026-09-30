@@ -12,15 +12,15 @@ from pathlib import Path
 
 import pytest
 
-from webapi_extractor.analyzer import (
+from scry_mcp_gen.analyzer import (
     _is_json_content_type,
     _non_json_response,
     analyze_capture,
     is_attachment_disposition,
     is_business_file_download,
 )
-from webapi_extractor.generator import render_server
-from webapi_extractor.project import generation_skip_reasons, session_to_registry_entries
+from scry_mcp_gen.generator import render_server
+from scry_mcp_gen.project import generation_skip_reasons, session_to_registry_entries
 
 
 class TestIsJsonContentType:
@@ -303,7 +303,7 @@ def test_content_disposition_survives_redaction():
     token 类整段遮蔽）。`Content-Disposition` 是**证据**不是凭据，必须原样留下，
     否则 attachment 这条判据永远读不到。
     """
-    from webapi_extractor.redaction import redact_headers
+    from scry_mcp_gen.redaction import redact_headers
 
     redacted = redact_headers({"Content-Disposition": 'attachment; filename="q3.csv"',
                               "Content-Type": "text/csv"})

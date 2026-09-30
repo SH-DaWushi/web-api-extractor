@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# web-api-extractor 引导脚本 —— POSIX / macOS / Linux 未经验证、不受支持。
+# scry-mcp-gen 引导脚本 —— POSIX / macOS / Linux 未经验证、不受支持。
 # 本项目只支持 Windows：受支持的引导路径是 bootstrap.py / bootstrap.ps1。
 # 本文件仅出于礼节保留在仓库中，仅供参考、不作完整验证，也不随商店构建分发。
 # 作用：调用 bootstrap.py 建立独立 venv、安装依赖 + Playwright Chromium，最后跑 doctor 自检。

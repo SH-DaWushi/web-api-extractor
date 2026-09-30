@@ -23,16 +23,16 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from webapi_extractor.bodies import (  # noqa: E402
+from scry_mcp_gen.bodies import (  # noqa: E402
     parse_multipart,
     split_multipart,
 )
-from webapi_extractor.capture import CaptureSession  # noqa: E402
-from webapi_extractor.redaction import (  # noqa: E402
+from scry_mcp_gen.capture import CaptureSession  # noqa: E402
+from scry_mcp_gen.redaction import (  # noqa: E402
     mentions_unmasked_secret,
     redact_payload,
 )
-from webapi_extractor.storage import SessionStore  # noqa: E402
+from scry_mcp_gen.storage import SessionStore  # noqa: E402
 
 PASSWORD = "hunter2"
 

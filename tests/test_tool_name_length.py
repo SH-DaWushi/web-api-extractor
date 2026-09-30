@@ -16,7 +16,7 @@ import re
 
 import pytest
 
-from webapi_extractor.project import (
+from scry_mcp_gen.project import (
     MCP_TOOL_NAME_MAX,
     _shorten_tool_name,
     _tool_name,

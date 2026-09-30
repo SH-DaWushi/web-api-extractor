@@ -46,7 +46,7 @@
   被整条丢弃**（这些接口推断不出响应结构），以及一句**直接转告使用者**的补救话 —— 里面写着
   **下一步具体动作**：重新调 `start_capture` 并传 `response_limit_bytes=<提示给的字节数>`，
   抓完再跑一次本工具。**这件事 Agent 自己做得到**（不要再让使用者去设环境变量
-  `WEB_API_EXTRACTOR_RESPONSE_LIMIT` —— 非技术使用者做不到，也不需要做）。**别自己去翻日志判断**
+  `SCRY_RESPONSE_LIMIT` —— 非技术使用者做不到，也不需要做）。**别自己去翻日志判断**
   —— 照这句话说。
 - `truncated` / `truncated_hint`：摘要对长列表做了**有损**截断。`truncated` 给出每个列表被省略的
   条数；`truncated_hint` 说明完整清单在 `full_result_path` 的 `analysis.json` 里一条不少，

@@ -19,7 +19,7 @@
   5. 非法设置值给**明确错误**（点名变量与坏值），而不是崩或静默退化。
 
 导入 `server.py` 会跑 `Settings.from_environment()` + `ensure_directories()` +
-`recover_orphans()`，故先把数据目录指到临时目录再导入，绝不碰本机 `~/.webapiextractor`。
+`recover_orphans()`，故先把数据目录指到临时目录再导入，绝不碰本机 `~/.scry`。
 """
 from __future__ import annotations
 
@@ -32,9 +32,9 @@ from unittest.mock import patch
 
 import pytest
 
-from webapi_extractor.capture import BrowserNavigationError, CaptureSession
-from webapi_extractor.config import Settings
-from webapi_extractor.proxy_env import (
+from scry_mcp_gen.capture import BrowserNavigationError, CaptureSession
+from scry_mcp_gen.config import Settings
+from scry_mcp_gen.proxy_env import (
     BUILTIN_DIRECT_ARG,
     PROXY_MODE_ENV,
     auto_fallback_notice,
@@ -43,7 +43,7 @@ from webapi_extractor.proxy_env import (
     proxy_failure_hint,
     proxy_failure_kind,
 )
-from webapi_extractor.storage import SessionStore
+from scry_mcp_gen.storage import SessionStore
 
 URL = "https://oa.example.com/"
 
@@ -212,15 +212,15 @@ class TestProxyFailureDiagnosis:
 @pytest.fixture(scope="module")
 def web(tmp_path_factory):
     data_root = tmp_path_factory.mktemp("data")
-    previous = os.environ.get("WEB_API_EXTRACTOR_DATA")
-    os.environ["WEB_API_EXTRACTOR_DATA"] = str(data_root)
+    previous = os.environ.get("SCRY_DATA")
+    os.environ["SCRY_DATA"] = str(data_root)
     try:
-        module = importlib.import_module("webapi_extractor.server")
+        module = importlib.import_module("scry_mcp_gen.server")
     finally:
         if previous is None:
-            os.environ.pop("WEB_API_EXTRACTOR_DATA", None)
+            os.environ.pop("SCRY_DATA", None)
         else:
-            os.environ["WEB_API_EXTRACTOR_DATA"] = previous
+            os.environ["SCRY_DATA"] = previous
     return module
 
 

@@ -11,7 +11,7 @@ from .proxy_env import DEFAULT_PROXY_MODE, PROXY_MODES, browser_proxy_args
 # 响应体/请求体/WebSocket 帧共用的体积上限环境变量名。**只在这里写一次**：
 # 抓包侧（capture.py）与摘要侧（analyzer.py / server.py）必须指向同一个开关，
 # 否则「建议调大上限」的提示会指错变量（用户改了也不生效）。
-RESPONSE_LIMIT_ENV = "WEB_API_EXTRACTOR_RESPONSE_LIMIT"
+RESPONSE_LIMIT_ENV = "SCRY_RESPONSE_LIMIT"
 
 # ``start_capture`` 的 ``response_limit_bytes`` 参数允许的最大值。
 #
@@ -151,13 +151,13 @@ class Settings:
 
     @classmethod
     def from_environment(cls) -> "Settings":
-        root = Path(os.environ.get("WEB_API_EXTRACTOR_DATA", "~/.webapiextractor")).expanduser()
+        root = Path(os.environ.get("SCRY_DATA", "~/.scry")).expanduser()
         response_limit = _env_int(RESPONSE_LIMIT_ENV, 256 * 1024)
-        idle_timeout = _env_int("WEB_API_EXTRACTOR_IDLE_TIMEOUT", 5 * 60)
-        max_sessions = _env_int("WEB_API_EXTRACTOR_MAX_SESSIONS", 3)
-        noise_bytes = _env_int("WEB_API_EXTRACTOR_NOISE_RESPONSE_BYTES", 1024 * 1024)
-        noise_samples = _env_int("WEB_API_EXTRACTOR_NOISE_SAMPLE_COUNT", 50)
-        proxy_mode = _env_choice("WEB_API_EXTRACTOR_PROXY_MODE", DEFAULT_PROXY_MODE, PROXY_MODES)
+        idle_timeout = _env_int("SCRY_IDLE_TIMEOUT", 5 * 60)
+        max_sessions = _env_int("SCRY_MAX_SESSIONS", 3)
+        noise_bytes = _env_int("SCRY_NOISE_RESPONSE_BYTES", 1024 * 1024)
+        noise_samples = _env_int("SCRY_NOISE_SAMPLE_COUNT", 50)
+        proxy_mode = _env_choice("SCRY_PROXY_MODE", DEFAULT_PROXY_MODE, PROXY_MODES)
         if response_limit <= 0 or idle_timeout <= 0 or max_sessions <= 0:
             raise ValueError("Extractor limits must be positive")
         if noise_bytes <= 0 or noise_samples <= 0:

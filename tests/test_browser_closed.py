@@ -14,8 +14,8 @@ import time
 
 import pytest
 
-from webapi_extractor.capture import CaptureSession
-from webapi_extractor.storage import SessionStore
+from scry_mcp_gen.capture import CaptureSession
+from scry_mcp_gen.storage import SessionStore
 
 
 def _session(tmp_path, sid="s1", **kw) -> CaptureSession:
@@ -132,7 +132,7 @@ class TestControlBarRemoved:
 
     def test_control_bar_module_gone(self):
         with pytest.raises(ImportError):
-            import webapi_extractor.control_bar  # noqa: F401
+            import scry_mcp_gen.control_bar  # noqa: F401
 
     def test_pause_resume_still_work(self, tmp_path):
         """移除控制条不应影响 pause/resume（空闲超时仍在用）。"""

@@ -29,7 +29,7 @@ TLS_ERROR_MARKERS = (
 
 def _probe_timeout_ms() -> int:
     try:
-        return int(os.environ.get("WEB_API_EXTRACTOR_PROBE_TIMEOUT", DEFAULT_TIMEOUT_MS))
+        return int(os.environ.get("SCRY_PROBE_TIMEOUT", DEFAULT_TIMEOUT_MS))
     except ValueError:
         return DEFAULT_TIMEOUT_MS
 
@@ -54,10 +54,10 @@ def _classify_load_failure(exc: BaseException) -> tuple[bool, str]:
     return False, (
         "the page did not finish loading within the timeout "
         "(the page itself may be slow, or the network is restricted/proxied). Retry with a "
-        "larger WEB_API_EXTRACTOR_PROBE_TIMEOUT, or log in interactively via "
+        "larger SCRY_PROBE_TIMEOUT, or log in interactively via "
         "open_browser_login if the site needs authentication. "
         "页面在超时时间内未完成加载（可能页面慢、网络受限或被代理拦截）；"
-        "可调大 WEB_API_EXTRACTOR_PROBE_TIMEOUT 后重试，"
+        "可调大 SCRY_PROBE_TIMEOUT 后重试，"
         "或直接改用 open_browser_login 交互式登录。"
     )
 

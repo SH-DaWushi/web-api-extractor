@@ -22,9 +22,9 @@ import json
 import types
 from pathlib import Path
 
-from webapi_extractor.analyzer import analyze_capture
-from webapi_extractor.generator import render_server
-from webapi_extractor.project import (
+from scry_mcp_gen.analyzer import analyze_capture
+from scry_mcp_gen.generator import render_server
+from scry_mcp_gen.project import (
     init_project,
     is_conflict_change,
     load_registry,

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from webapi_extractor.domain import domain_matches, registrable_domain, same_site
+from scry_mcp_gen.domain import domain_matches, registrable_domain, same_site
 
 
 class TestRegistrableDomain:

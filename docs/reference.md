@@ -70,14 +70,14 @@ flowchart TB
 
 ## 安装形态
 
-**A. 作为技能导入（推荐，使用者走这条）** —— 把技能文件夹（或 `web-api-extractor-agent.zip`
+**A. 作为技能导入（推荐，使用者走这条）** —— 把技能文件夹（或 `scry-mcp-gen-agent.zip`
 导入包）拖进 AI 助手的「技能 / Skill」设置页；或直接拖进对话，让 Agent 自己装。
 **使用者不需要装库、也不需要跑任何命令**，首次使用的运行环境（含浏览器内核）由 Agent
 引导完成（见下「环境准备」）。
 
 技能文件夹里的 `SKILL.md`、`runbook/`、`bootstrap.*`、`start_server.py`、`mcp_call.py`
 都是**给 Agent 消费**的文件，`docs/reference.md`（本文件）是给人看的技术文档。
-`web-api-extractor-agent.zip` 由 `package-agent.py`（跨平台）或 `package-agent.ps1`（Windows）
+`scry-mcp-gen-agent.zip` 由 `package-agent.py`（跨平台）或 `package-agent.ps1`（Windows）
 打包 —— 两份脚本的清单与产物一致，用哪份都行；内容与技能文件夹相同。
 **官方包挂在 GitHub Releases**（`v0.1.0` 起，每个 tag 挂一份对应的 zip），使用者直接下载即可，
 不必自己拉仓库再打包。
@@ -97,8 +97,8 @@ pip install -e .
 python -m playwright install chromium
 ```
 
-此时入口为 `web-api-extractor`（stdio，见 `pyproject.toml` 的 `[project.scripts]`）与
-`python -m webapi_extractor serve-http`；仓库内的驱动脚本（`mcp_call.py`、`start_server.py`
+此时入口为 `scry-mcp-gen`（stdio，见 `pyproject.toml` 的 `[project.scripts]`）与
+`python -m scry_mcp_gen serve-http`；仓库内的驱动脚本（`mcp_call.py`、`start_server.py`
 等）不在发行包里。运行时依赖只有 `fastmcp / httpx / playwright`；测试运行器（`pytest` /
 `pytest-asyncio`）是**可选**的，`pip install -e .` **不会**装，要装用
 `pip install -e ".[test]"`（等价于 `pip install -r requirements-dev.txt`），否则
@@ -117,7 +117,7 @@ python -m playwright install chromium
 
 两个版本不止许可不同，**打进包里的内容也不同**。清单的权威来源是 `package-agent.py` 的 `INCLUDE`（开源版）与 `--store` 的裁剪逻辑（`STORE_EXCLUDE` / `STORE_ADD` / `STORE_RENAME`；与 `package-agent.ps1` 逐项一致，见 `tests/test_package_agent.py`）：
 
-- **开源版**打包 `INCLUDE` 的顶层项：`pyproject.toml`、`requirements.txt`、`requirements-dev.txt`、`README.md` / `README.en.md`、`SKILL.md`、`docs/`、`runbook/`、`LICENSE`、`DISCLAIMER.md`、`bootstrap.py` / `bootstrap.ps1` / `bootstrap.sh`、`install-agent.ps1`、`start_server.py`、`run_http.py`、`mcp_call.py`、`.vscode/`、`webapi_extractor/`、`tests/`。
+- **开源版**打包 `INCLUDE` 的顶层项：`pyproject.toml`、`requirements.txt`、`requirements-dev.txt`、`README.md` / `README.en.md`、`SKILL.md`、`docs/`、`runbook/`、`LICENSE`、`DISCLAIMER.md`、`bootstrap.py` / `bootstrap.ps1` / `bootstrap.sh`、`install-agent.ps1`、`start_server.py`、`run_http.py`、`mcp_call.py`、`.vscode/`、`scry_mcp_gen/`、`tests/`。
 - **商店版**在开源清单上**去掉**：`tests/`（整个测试套件）、`pyproject.toml`、`requirements-dev.txt`、`.vscode/`、`bootstrap.sh`、`install-agent.ps1`，以及 `LICENSE`；**只新增** `LICENSE-STORE`，并把它在包内**改名为 `LICENSE`**（商店包只能带一份授权文件，必须是商店版那份）。
 - 两个分发包**都不包含** `package-agent.py` / `package-agent.ps1`（打包脚本本身）与 `.gitattributes` —— 它们不在 `INCLUDE` 里，只是仓库文件，**不是**被商店版单独裁掉的。
 - **对使用者的实际影响**：商店包**没有 `tests/`**，也没有测试依赖（`requirements-dev.txt`）与打包元数据（`pyproject.toml`）。因此**想在包里跑测试请用开源版**（或直接用仓库源码）；商店包只提供运行所需文件。
@@ -144,7 +144,7 @@ powershell -ExecutionPolicy Bypass -File .\bootstrap.ps1 -WithTests   # Windows�
 bash ./bootstrap.sh --with-tests                                      # 非支持平台，见下方说明
 ```
 
-> **venv 建在数据目录下**：`<数据目录>/venv`（默认 `~/.webapiextractor/venv`），**不在技能文件夹里** ——
+> **venv 建在数据目录下**：`<数据目录>/venv`（默认 `~/.scry/venv`），**不在技能文件夹里** ——
 > 技能目录由宿主应用管理，升级时会被重新同步/替换，把约 180 MB 的 venv 放在里面既可能被连带删除、
 > 又得重拉一次 Chromium。历史部署若在技能目录里留有旧的 `.venv`，引导会**直接复用它**（打印提示），
 > 不会再建第二份。
@@ -156,8 +156,8 @@ bash ./bootstrap.sh --with-tests                                      # 非支�
 已装过环境，只做检查：
 
 ```bash
-python -m webapi_extractor doctor             # 自检：依赖 / Chromium / 数据目录 / 端口
-python -m webapi_extractor doctor --install   # 自检并自动补装缺失项
+python -m scry_mcp_gen doctor             # 自检：依赖 / Chromium / 数据目录 / 端口
+python -m scry_mcp_gen doctor --install   # 自检并自动补装缺失项
 ```
 
 依赖：Python ≥ 3.10，`fastmcp / httpx / playwright` + Playwright Chromium 内核。
@@ -175,7 +175,7 @@ python start_server.py --port 8423  # 换端口
 python start_server.py --stop --force   # 跳过 PID 归属校验（确认该 PID 确为本项目服务再用）
 
 # 或 stdio 方式（供 MCP 客户端直接拉起）：
-python -m webapi_extractor
+python -m scry_mcp_gen
 ```
 
 > `start_server.py` 挑解释器的顺序是 **数据目录 venv → 技能目录旧 `.venv` → 当前解释器**，
@@ -378,7 +378,7 @@ stdout 合流。
 ## 数据目录与环境变量
 
 ```
-~/.webapiextractor/
+~/.scry/
 ├─ sessions/<id>/          # 每次抓包：capture.jsonl / analysis.json / session.json / scripts/ / owner.json
 ├─ instances/<token>.json  # 运行中实例的身份 + 心跳（pid / 启动时间指纹 / heartbeat_at）
 ├─ auth_states/<site_key>.json   # 登录态（Cookie 明文、账号密码 DPAPI 加密，禁止提交/同步/截图），文件名规则见「安全设计」
@@ -391,7 +391,7 @@ stdout 合流。
 
 ### 多个实例共享一个数据根
 
-`WEB_API_EXTRACTOR_DATA` 可以把多个同时运行的实例指到同一个数据根。此时**「活动状态」不等于
+`SCRY_DATA` 可以把多个同时运行的实例指到同一个数据根。此时**「活动状态」不等于
 「孤儿」**：另一个实例完全可能正在抓那些会话。启动时的 `recover_orphans` 只回收 **owner 可证明已消失**
 的会话，判定顺序（每一步都往保守方向兜底 —— 宁可先不回收，也不误杀活实例）：
 
@@ -406,7 +406,7 @@ stdout 合流。
 
 ### 空闲暂停不会丢数据
 
-`WEB_API_EXTRACTOR_IDLE_TIMEOUT`（默认 300 秒）无操作会把会话置为 `paused`（**不结束会话**，可
+`SCRY_IDLE_TIMEOUT`（默认 300 秒）无操作会把会话置为 `paused`（**不结束会话**，可
 `resume_capture`）。这一步不是丢弃点：
 
 - 已经抓到、还没落盘的事件先写进 `capture.jsonl`；只存在内存里的「未配对请求头」
@@ -415,19 +415,19 @@ stdout 合流。
   `status_history` 里带 `reason` 的一条），`list_sessions` 与 `get_capture_status` 都看得到，并附一句
   可读提示（含已落盘体积与下一步该怎么做）——**不会静默发生**。
 
-环境变量的**完整清单以本表为准**；实现见 `webapi_extractor/config.py`（**例外**：
-`WEB_API_EXTRACTOR_PROBE_TIMEOUT` 实现在 `probe.py`，不在 `config.py`）。
+环境变量的**完整清单以本表为准**；实现见 `scry_mcp_gen/config.py`（**例外**：
+`SCRY_PROBE_TIMEOUT` 实现在 `probe.py`，不在 `config.py`）。
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
-| `WEB_API_EXTRACTOR_DATA` | `~/.webapiextractor` | 数据根目录 |
-| `WEB_API_EXTRACTOR_RESPONSE_LIMIT` | `262144` | 响应体截断上限（字节）；可按会话覆盖：`start_capture(response_limit_bytes=…)` |
-| `WEB_API_EXTRACTOR_IDLE_TIMEOUT` | `300` | 无操作自动暂停（秒） |
-| `WEB_API_EXTRACTOR_MAX_SESSIONS` | `3` | 并发抓包会话上限 |
-| `WEB_API_EXTRACTOR_PROBE_TIMEOUT` | `15000` | 登录探测超时（毫秒） |
-| `WEB_API_EXTRACTOR_NOISE_RESPONSE_BYTES` | `1048576` | 单端点累计响应体超此值 → 标记待复核 |
-| `WEB_API_EXTRACTOR_NOISE_SAMPLE_COUNT` | `50` | 单端点采样次数超此值 → 标记待复核 |
-| `WEB_API_EXTRACTOR_PROXY_MODE` | `auto` | 抓包浏览器代理模式：`auto`=先直连、代理类失败自动改用系统代理重试一次 / `direct`=只直连 / `system`=只跟随系统代理 |
+| `SCRY_DATA` | `~/.scry` | 数据根目录 |
+| `SCRY_RESPONSE_LIMIT` | `262144` | 响应体截断上限（字节）；可按会话覆盖：`start_capture(response_limit_bytes=…)` |
+| `SCRY_IDLE_TIMEOUT` | `300` | 无操作自动暂停（秒） |
+| `SCRY_MAX_SESSIONS` | `3` | 并发抓包会话上限 |
+| `SCRY_PROBE_TIMEOUT` | `15000` | 登录探测超时（毫秒） |
+| `SCRY_NOISE_RESPONSE_BYTES` | `1048576` | 单端点累计响应体超此值 → 标记待复核 |
+| `SCRY_NOISE_SAMPLE_COUNT` | `50` | 单端点采样次数超此值 → 标记待复核 |
+| `SCRY_PROXY_MODE` | `auto` | 抓包浏览器代理模式：`auto`=先直连、代理类失败自动改用系统代理重试一次 / `direct`=只直连 / `system`=只跟随系统代理 |
 
 ### 抓包浏览器的代理模式（默认 `auto`：零配置）
 
@@ -455,7 +455,7 @@ stdout 合流。
   （不留半开窗口 / 多余进程），被放弃的那次尝试的事件也不会写进 `capture.jsonl`；
 - 与代理无关的失败（例如 Chromium 内核缺失）**不回退**，也不扣代理的帽子。
 
-改法：设 `WEB_API_EXTRACTOR_PROXY_MODE=direct`（或 `system`）后**重启服务**，
+改法：设 `SCRY_PROXY_MODE=direct`（或 `system`）后**重启服务**，
 新开的抓包会话才生效（已开着的窗口不会变）。
 
 **失败诊断**：首个页面导航失败时，若错误码属代理类（`ERR_PROXY_CONNECTION_FAILED` /
@@ -466,7 +466,7 @@ stdout 合流。
 
 ### 数据目录体积与响应上限语义
 
-- **响应上限不是「截断」，是整条丢弃**：`WEB_API_EXTRACTOR_RESPONSE_LIMIT`（默认 256 KB）按
+- **响应上限不是「截断」，是整条丢弃**：`SCRY_RESPONSE_LIMIT`（默认 256 KB）按
   **解码后字节数**判定；超限的响应体整条不记录，只留 `size` / `body_truncated` / `body_dropped`
   元数据。**后果**：该端点拿不到 `response_schema`，生成的工具也就没有结构化响应。
   **丢弃不是静默的**：会话元数据与 `analyze_traffic` 摘要都会如实报出
@@ -475,7 +475,7 @@ stdout 合流。
   **补救是一条命令级动作，不是「让使用者去设环境变量」**：提示语里直接给出下一步 ——
   重新调 `start_capture` 并传 `response_limit_bytes=<建议值>`（例：4 MB = `4194304`），
   抓完再跑一次 `analyze_traffic`。`response_limit_bytes` 是 `start_capture` 的**可选**参数，
-  只对本次会话生效，不传则沿用 `WEB_API_EXTRACTOR_RESPONSE_LIMIT`（默认 256 KB），
+  只对本次会话生效，不传则沿用 `SCRY_RESPONSE_LIMIT`（默认 256 KB），
   与改动前完全一致；会话元数据里会记下这个生效值（`response_limit_bytes`），
   所以事后 `analyze_traffic` 的提示语引用的是**那次抓包真正生效**的上限，而不是全局默认值。
   合法范围 `1 ~ 67108864`（64 MB）。**上限为什么是 64 MB**：该值决定每一条响应体 / 请求体 /
@@ -516,7 +516,7 @@ stdout 合流。
 |---|---|
 | `request` | 请求行：URL / method / **已脱敏**的请求头与请求体，外加 `postData_size` / `body_dropped` / `redaction_meta`（形态元数据）|
 | `response` | 状态码 / **已脱敏**响应头 / `mimeType` / `resourceType` |
-| `response_body` | 响应体；超体积上限（`WEB_API_EXTRACTOR_RESPONSE_LIMIT`，可由 `start_capture(response_limit_bytes=…)` 按会话覆盖）→ `body: null` + `body_truncated` + `body_dropped`（**整条丢弃**）；取不到时只有 `body_unavailable_reason` |
+| `response_body` | 响应体；超体积上限（`SCRY_RESPONSE_LIMIT`，可由 `start_capture(response_limit_bytes=…)` 按会话覆盖）→ `body: null` + `body_truncated` + `body_dropped`（**整条丢弃**）；取不到时只有 `body_unavailable_reason` |
 | `headers_patch` | `requestWillBeSentExtraInfo` 晚到时的**原地补丁**（Cookie / `Sec-*` 这类浏览器合成头的权威来源）|
 | `websocket` | WebSocket 建立（`webSocketCreated`）|
 | `websocket_frame` | **WebSocket 帧内容**（`webSocketFrameSent` / `webSocketFrameReceived`）：`direction` / `opcode` / `payload`（走 `redact_payload`，与请求体**同一套脱敏**：凭据遮蔽 + 保留形态元数据）/ `payload_size` / `payload_dropped` / `token_paths` / `redaction_meta`。体量语义与响应体**完全一致**：超限则 `payload: null` + `payload_dropped: true`（二进制帧按 base64 解码后的长度算）。帧事件自带不带 url，`url` 取自 `webSocketCreated` 记下的地址 |
@@ -662,7 +662,7 @@ stdout 合流。
   **分析侧元数据本体**（逐值结论 / 原因码 / note）不进生成物：生成器在把 `auth_login` 烘进
   `_AUTH_LOGIN_CFG` 前显式剔除 `query_param_provenance`，只把**取用计划**（来源 URL + 字段路径）
   发射进代码 —— 那是功能本身，不是元数据（registry.json / analysis.json 照旧保留整份记录）。
-- **站点档案**：可选的 `webapi_extractor/site_profiles/` 支持为已知站点应用语义化工具
+- **站点档案**：可选的 `scry_mcp_gen/site_profiles/` 支持为已知站点应用语义化工具
   命名与中文描述；仓库不内置任何档案，其它站点走通用推导。
 
 ## 生成的子 MCP 自带的能力
@@ -915,7 +915,7 @@ HTTP 200、JSON 正常、没有任何报错 —— 使用者无法察觉。`page
 ## 项目结构
 
 ```
-WebAPIExtractor/
+web-api-extractor/
 ├─ SKILL.md                     # Agent 操作手册主索引（按步骤照做）
 ├─ README.md                    # 人类入口：这是什么、怎么用起来
 ├─ docs/reference.md            # 本文件（技术参考）
@@ -935,7 +935,7 @@ WebAPIExtractor/
 ├─ .gitignore / .gitattributes  # 忽略运行产物；锁定行尾（*.sh 必须为 LF）
 ├─ .vscode/mcp.json             # 把本服务注册为 stdio MCP（无本机绝对路径）
 ├─ tests/                       # pytest 套件（37 个文件）
-└─ webapi_extractor/
+└─ scry_mcp_gen/
    ├─ __main__.py               # CLI：doctor | serve-http |（默认）stdio
    ├─ server.py                 # MCP Server 与工具注册
    ├─ auth.py                   # 登录流程（用户确认完成，不自动判定）+ 实测登录方式落盘
@@ -977,7 +977,7 @@ python -m pytest tests -q
   - `server.py` 的**会话与抓包类**工具（probe / login / capture / analyze / update_endpoint /
     extract_crypto）仍无测试 —— 它们要真实浏览器；**项目类 4 个工具与 doctor 已覆盖**
     （`tests/test_iterate_tools.py`、`tests/test_doctor.py`，导入 `server.py` 前把数据目录
-    指到临时目录，不碰本机 `~/.webapiextractor`）；
+    指到临时目录，不碰本机 `~/.scry`）；
   - 迭代链路（`runbook/06-iterate.md`）、用户态隔离、`locked` 拒绝由
     `tests/test_iterate_chain.py` 覆盖（此前无覆盖，本轮补上）；
   - `test_proxy_env.py` 有一条 POSIX-only 用例，在 Windows 上会被 skip（属预期）。

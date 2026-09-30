@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "web-api-extractor"
+name = "scry-mcp-gen"
 version = "0.2.0"
 description = "Extract web APIs into a local FastMCP server"
 readme = "README.md"
@@ -44,11 +44,11 @@ test = [
 ]
 
 [project.scripts]
-web-api-extractor = "webapi_extractor.server:main"
+scry = "scry_mcp_gen.server:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [tool.setuptools.packages.find]
-include = ["webapi_extractor*"]
+include = ["scry_mcp_gen*"]

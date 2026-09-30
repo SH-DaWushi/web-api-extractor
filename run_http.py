@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""HTTP launcher: run web-api-extractor MCP server on 127.0.0.1:8422/mcp.
+"""HTTP launcher: run scry-mcp-gen MCP server on 127.0.0.1:8422/mcp.
 
 Stdio transport requires a persistent client session; this launcher exposes
 the same tools over streamable HTTP so any local process can drive them.
@@ -20,21 +20,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # 就抛 InvalidURL。后果：服务在 mcp.run() 内部崩溃、端口从未监听，调用方只看到
 # httpx.ConnectError（目标计算机积极拒绝）—— 报错方向完全指向「服务/网络没起来」，
 # 只有 server.log 末尾那行 InvalidURL 才指得出真因。
-# webapi_extractor/proxy_env.py 早已实现并写清了这件事，mcp_call.py 也用
+# scry_mcp_gen/proxy_env.py 早已实现并写清了这件事，mcp_call.py 也用
 # trust_env=False 规避过 —— 唯独服务端启动路径漏调，属于「修了一半」。
 # 这段顺序由 tests/test_proxy_env.py 的守卫看着，别再被重新生成冲掉。
-from webapi_extractor.proxy_env import sanitize_no_proxy  # noqa: E402
+from scry_mcp_gen.proxy_env import sanitize_no_proxy  # noqa: E402
 
 sanitize_no_proxy()
 
 from fastmcp import FastMCP  # noqa: E402
 
-from webapi_extractor.server import mcp  # noqa: E402
+from scry_mcp_gen.server import mcp  # noqa: E402
 
 DEFAULT_PORT = 8422
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="启动 web-api-extractor 的 HTTP MCP 服务")
+    ap = argparse.ArgumentParser(description="启动 scry-mcp-gen 的 HTTP MCP 服务")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--path", default="/mcp")

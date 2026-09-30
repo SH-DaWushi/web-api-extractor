@@ -28,7 +28,7 @@ $include = @(
     "run_http.py",
     "mcp_call.py",
     ".vscode",
-    "webapi_extractor",
+    "scry_mcp_gen",
     "tests"
 )
 
@@ -50,7 +50,7 @@ $storeInclude = @(
     "start_server.py",
     "run_http.py",
     "mcp_call.py",
-    "webapi_extractor",
+    "scry_mcp_gen",
     "LICENSE-STORE"
 )
 
@@ -59,10 +59,10 @@ $rename = @{ "LICENSE-STORE" = "LICENSE" }
 
 # 绝对路径直接用；Join-Path 会把 "D:\repo" + "C:\out\x.zip" 拼成一个坏路径。
 if ([string]::IsNullOrEmpty($Output)) {
-    $Output = if ($Store) { "web-api-extractor-store.zip" } else { "web-api-extractor-agent.zip" }
+    $Output = if ($Store) { "scry-mcp-gen-store.zip" } else { "scry-mcp-gen-agent.zip" }
 }
 $outputPath = if ([System.IO.Path]::IsPathRooted($Output)) { $Output } else { Join-Path $root $Output }
-$staging = Join-Path ([System.IO.Path]::GetTempPath()) ("web-api-extractor-package-" + [guid]::NewGuid().ToString("N"))
+$staging = Join-Path ([System.IO.Path]::GetTempPath()) ("scry-mcp-gen-package-" + [guid]::NewGuid().ToString("N"))
 
 $effective = if ($Store) { $storeInclude } else { $include }
 

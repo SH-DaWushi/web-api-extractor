@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from webapi_extractor.analyzer import _looks_like_json_body, _non_json_response
-from webapi_extractor.project import session_to_registry_entries
+from scry_mcp_gen.analyzer import _looks_like_json_body, _non_json_response
+from scry_mcp_gen.project import session_to_registry_entries
 
 
 def _resp(content_type: str | None = None, status: int | None = 200) -> dict:

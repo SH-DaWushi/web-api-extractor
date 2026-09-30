@@ -15,7 +15,7 @@ import base64
 import os
 import re
 
-from webapi_extractor.generator import render_server
+from scry_mcp_gen.generator import render_server
 
 COOKIE_HOST = "oa.example.com"
 

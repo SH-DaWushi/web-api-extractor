@@ -79,7 +79,7 @@ The traditional path takes **documentation and guesswork** as input. This skill 
 ## Installation forms
 
 **A. Import as a skill (recommended — this is the path a user takes)** — drag the skill folder
-(or the `web-api-extractor-agent.zip` import package) into your AI assistant's **Skills** settings
+(or the `scry-mcp-gen-agent.zip` import package) into your AI assistant's **Skills** settings
 page; or drop it straight into the conversation and let the agent install it.
 **A user installs no library and runs no command**; the first-run environment (including the browser
 engine) is set up by the agent (see "Environment setup" below).
@@ -87,7 +87,7 @@ engine) is set up by the agent (see "Environment setup" below).
 Inside the skill folder, `SKILL.md`, `runbook/`, `bootstrap.*`, `start_server.py` and `mcp_call.py`
 are all files **consumed by the agent**; `docs/reference.en.md` (this file, with the Chinese
 original at `docs/reference.md`) is the human-facing
-technical documentation. `web-api-extractor-agent.zip` is built by `package-agent.py`
+technical documentation. `scry-mcp-gen-agent.zip` is built by `package-agent.py`
 (cross-platform) or `package-agent.ps1` (Windows) — the two scripts have identical manifests and
 identical output, so either will do; the contents match the skill folder.
 **Official packages are attached to GitHub Releases** (from `v0.1.0` onward, each tag carries its own
@@ -108,8 +108,8 @@ pip install -e .
 python -m playwright install chromium
 ```
 
-The entry points are then `web-api-extractor` (stdio, see `[project.scripts]` in `pyproject.toml`)
-and `python -m webapi_extractor serve-http`; the repository-local driver scripts (`mcp_call.py`,
+The entry points are then `scry-mcp-gen` (stdio, see `[project.scripts]` in `pyproject.toml`)
+and `python -m scry_mcp_gen serve-http`; the repository-local driver scripts (`mcp_call.py`,
 `start_server.py`, …) are not in the package. The runtime dependencies are only
 `fastmcp / httpx / playwright`; the test runner (`pytest` / `pytest-asyncio`) is **optional** —
 `pip install -e .` does **not** install it, use `pip install -e ".[test]"` (equivalent to
@@ -139,7 +139,7 @@ authoritative source is `INCLUDE` (open-source) plus the `--store` trimming logi
 - **Open-source** packages the top-level items of `INCLUDE`: `pyproject.toml`, `requirements.txt`,
   `requirements-dev.txt`, `README.md` / `README.en.md`, `SKILL.md`, `docs/`, `runbook/`, `LICENSE`,
   `DISCLAIMER.md`, `bootstrap.py` / `bootstrap.ps1` / `bootstrap.sh`, `install-agent.ps1`,
-  `start_server.py`, `run_http.py`, `mcp_call.py`, `.vscode/`, `webapi_extractor/`, `tests/`.
+  `start_server.py`, `run_http.py`, `mcp_call.py`, `.vscode/`, `scry_mcp_gen/`, `tests/`.
 - **Store** takes that list and **removes**: `tests/` (the whole test suite), `pyproject.toml`,
   `requirements-dev.txt`, `.vscode/`, `bootstrap.sh`, `install-agent.ps1`, and `LICENSE`; it **only
   adds** `LICENSE-STORE`, which is **renamed to `LICENSE` inside the package** (a store package may
@@ -180,7 +180,7 @@ powershell -ExecutionPolicy Bypass -File .\bootstrap.ps1 -WithTests   # Windows 
 bash ./bootstrap.sh --with-tests                                      # unsupported platform, see note below
 ```
 
-> **The venv lives under the data directory**: `<data_root>/venv` (default `~/.webapiextractor/venv`),
+> **The venv lives under the data directory**: `<data_root>/venv` (default `~/.scry/venv`),
 > **not inside the skill folder** — the skill directory is managed by the host app and gets re-synced
 > or replaced on upgrade, so keeping the ~180 MB venv there risks it being deleted along with the
 > directory and having to re-download Chromium. If an older deployment still has a legacy `.venv` in
@@ -194,8 +194,8 @@ bash ./bootstrap.sh --with-tests                                      # unsuppor
 If the environment is already set up, just run the check:
 
 ```bash
-python -m webapi_extractor doctor             # deps / Chromium / data dir / port
-python -m webapi_extractor doctor --install   # check and install whatever is missing
+python -m scry_mcp_gen doctor             # deps / Chromium / data dir / port
+python -m scry_mcp_gen doctor --install   # check and install whatever is missing
 ```
 
 Requirements: Python ≥ 3.10, `fastmcp / httpx / playwright` + the Playwright Chromium engine.
@@ -213,7 +213,7 @@ python start_server.py --port 8423  # use another port
 python start_server.py --stop --force   # skip the PID-ownership check (only once you are sure)
 
 # Or stdio (for an MCP client to launch directly):
-python -m webapi_extractor
+python -m scry_mcp_gen
 ```
 
 > `start_server.py` picks its interpreter in the order **data-dir venv → legacy skill-folder `.venv`
@@ -457,7 +457,7 @@ missed in a round are only marked `unseen_since` (**never deleted automatically*
 ## Data directory and environment variables
 
 ```
-~/.webapiextractor/
+~/.scry/
 ├─ sessions/<id>/          # per capture: capture.jsonl / analysis.json / session.json / scripts/ / owner.json
 ├─ instances/<token>.json  # identity + heartbeat of a running instance (pid / process start fingerprint / heartbeat_at)
 ├─ auth_states/<site_key>.json   # session state (cookies plaintext, account/password DPAPI-encrypted; never commit/sync/screenshot); filename rules in "Security design"
@@ -470,7 +470,7 @@ missed in a round are only marked `unseen_since` (**never deleted automatically*
 
 ### Several instances sharing one data root
 
-`WEB_API_EXTRACTOR_DATA` may point several simultaneously running instances at the same data root.
+`SCRY_DATA` may point several simultaneously running instances at the same data root.
 In that case **"active" does not mean "orphaned"** — another instance may well be capturing those very
 sessions. `recover_orphans` therefore only reclaims sessions whose **owner is provably gone**, deciding in
 this order (every step errs towards caution: never reclaim while in doubt, rather than kill a live instance):
@@ -489,7 +489,7 @@ Sessions reclaimed because their owner was provably dead keep `orphaned_owner` a
 
 ### An idle pause never loses data
 
-`WEB_API_EXTRACTOR_IDLE_TIMEOUT` (300 s by default) turns a session `paused` when nothing happens
+`SCRY_IDLE_TIMEOUT` (300 s by default) turns a session `paused` when nothing happens
 (it does **not** end the session; `resume_capture` continues it). That transition is not a discard point:
 
 - events that were already captured but not yet on disk are written to `capture.jsonl` first; request
@@ -501,19 +501,19 @@ Sessions reclaimed because their owner was provably dead keep `orphaned_owner` a
   it **never happens silently**.
 
 This table is the **complete and authoritative list** of environment variables; the implementation
-is in `webapi_extractor/config.py` (**exception**: `WEB_API_EXTRACTOR_PROBE_TIMEOUT` is implemented
+is in `scry_mcp_gen/config.py` (**exception**: `SCRY_PROBE_TIMEOUT` is implemented
 in `probe.py`, not `config.py`).
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `WEB_API_EXTRACTOR_DATA` | `~/.webapiextractor` | Data root directory |
-| `WEB_API_EXTRACTOR_RESPONSE_LIMIT` | `262144` | Response body size limit (bytes); overridable per session with `start_capture(response_limit_bytes=…)` |
-| `WEB_API_EXTRACTOR_IDLE_TIMEOUT` | `300` | Pause after inactivity (seconds) |
-| `WEB_API_EXTRACTOR_MAX_SESSIONS` | `3` | Max concurrent capture sessions |
-| `WEB_API_EXTRACTOR_PROBE_TIMEOUT` | `15000` | Login probe timeout (milliseconds) |
-| `WEB_API_EXTRACTOR_NOISE_RESPONSE_BYTES` | `1048576` | Cumulative response bytes per endpoint above which it is flagged for review |
-| `WEB_API_EXTRACTOR_NOISE_SAMPLE_COUNT` | `50` | Sample count per endpoint above which it is flagged for review |
-| `WEB_API_EXTRACTOR_PROXY_MODE` | `auto` | Proxy mode for the capture browser: `auto` = start direct, retry once over the system proxy on a proxy-shaped failure / `direct` = direct only / `system` = system proxy only |
+| `SCRY_DATA` | `~/.scry` | Data root directory |
+| `SCRY_RESPONSE_LIMIT` | `262144` | Response body size limit (bytes); overridable per session with `start_capture(response_limit_bytes=…)` |
+| `SCRY_IDLE_TIMEOUT` | `300` | Pause after inactivity (seconds) |
+| `SCRY_MAX_SESSIONS` | `3` | Max concurrent capture sessions |
+| `SCRY_PROBE_TIMEOUT` | `15000` | Login probe timeout (milliseconds) |
+| `SCRY_NOISE_RESPONSE_BYTES` | `1048576` | Cumulative response bytes per endpoint above which it is flagged for review |
+| `SCRY_NOISE_SAMPLE_COUNT` | `50` | Sample count per endpoint above which it is flagged for review |
+| `SCRY_PROXY_MODE` | `auto` | Proxy mode for the capture browser: `auto` = start direct, retry once over the system proxy on a proxy-shaped failure / `direct` = direct only / `system` = system proxy only |
 
 ### Proxy mode of the capture browser (`auto` by default: zero configuration)
 
@@ -550,7 +550,7 @@ The boundaries of the fallback are deliberate:
 - failures that have nothing to do with a proxy (e.g. a missing Chromium kernel) are **not**
   retried and are **not** blamed on a proxy.
 
-To switch: set `WEB_API_EXTRACTOR_PROXY_MODE=direct` (or `system`) and **restart the service** — it
+To switch: set `SCRY_PROXY_MODE=direct` (or `system`) and **restart the service** — it
 applies to newly started capture sessions (an already-open window does not change).
 
 **Failure diagnosis**: when the first page navigation fails and the error code is proxy-like
@@ -564,7 +564,7 @@ blamed on one.
 ### Data directory size, and what the response limit really means
 
 - **The response limit is not "truncation" — it is an all-or-nothing drop**:
-  `WEB_API_EXTRACTOR_RESPONSE_LIMIT` (default 256 KB) is measured on the **decoded** byte count; an
+  `SCRY_RESPONSE_LIMIT` (default 256 KB) is measured on the **decoded** byte count; an
   over-limit response body is not recorded at all, leaving only `size` / `body_truncated` /
   `body_dropped` metadata. **Consequence**: that endpoint gets no `response_schema`, so the generated
   tool has no structured response. **The drop is not silent**: session metadata and the
@@ -574,7 +574,7 @@ blamed on one.
   **The fix is a tool call, not "go set an environment variable"**: the hint spells out the next step —
   call `start_capture` again with `response_limit_bytes=<suggested value>` (e.g. 4 MB = `4194304`), then
   re-run `analyze_traffic`. `response_limit_bytes` is an **optional** parameter of `start_capture` that
-  applies to that session only; omit it and `WEB_API_EXTRACTOR_RESPONSE_LIMIT` (default 256 KB) applies,
+  applies to that session only; omit it and `SCRY_RESPONSE_LIMIT` (default 256 KB) applies,
   exactly as before. The effective value is recorded in the session metadata (`response_limit_bytes`), so
   the hint quoted by a later `analyze_traffic` refers to the limit that was **actually in force** for that
   capture, not to the global default. Legal range: `1 ~ 67108864` (64 MB). **Why 64 MB**: this value
@@ -621,7 +621,7 @@ Each line of `capture.jsonl` is one JSON event:
 |---|---|
 | `request` | Request line: URL / method / **redacted** headers and body, plus `postData_size` / `body_dropped` / `redaction_meta` (shape metadata) |
 | `response` | Status / **redacted** headers / `mimeType` / `resourceType` |
-| `response_body` | The body; over the size limit (`WEB_API_EXTRACTOR_RESPONSE_LIMIT`, overridable per session via `start_capture(response_limit_bytes=…)`) → `body: null` + `body_truncated` + `body_dropped` (**dropped entirely**); when unavailable only `body_unavailable_reason` is present |
+| `response_body` | The body; over the size limit (`SCRY_RESPONSE_LIMIT`, overridable per session via `start_capture(response_limit_bytes=…)`) → `body: null` + `body_truncated` + `body_dropped` (**dropped entirely**); when unavailable only `body_unavailable_reason` is present |
 | `headers_patch` | An in-place patch when `requestWillBeSentExtraInfo` arrives late (the authoritative source for browser-synthesized headers such as Cookie / `Sec-*`) |
 | `websocket` | A WebSocket was created (`webSocketCreated`) |
 | `websocket_frame` | **WebSocket frame contents** (`webSocketFrameSent` / `webSocketFrameReceived`): `direction` / `opcode` / `payload` (goes through `redact_payload`, the **same redaction as request bodies**: credentials masked, shape metadata kept) / `payload_size` / `payload_dropped` / `token_paths` / `redaction_meta`. The size semantics are **identical to response bodies**: over the limit → `payload: null` + `payload_dropped: true` (binary frames measured on the decoded byte count). Frame events carry no URL of their own; `url` comes from the remembered `webSocketCreated` |
@@ -815,7 +815,7 @@ attached to the wrong one). In the saved script filename the `:` becomes `_`.
   `query_param_provenance` before baking `auth_login` into `_AUTH_LOGIN_CFG` and emits only the
   **fetch plan** (source URL + field path), which is the feature itself, not metadata (registry.json
   and analysis.json still keep the whole record).
-- **Site profiles**: the optional `webapi_extractor/site_profiles/` lets known sites apply semantic
+- **Site profiles**: the optional `scry_mcp_gen/site_profiles/` lets known sites apply semantic
   tool naming and Chinese descriptions; the repository ships no profiles, and other sites fall back
   to generic derivation.
 
@@ -1147,7 +1147,7 @@ web-api-extractor/
 ├─ .gitignore / .gitattributes  # Ignore runtime artifacts; pin line endings (*.sh must be LF)
 ├─ .vscode/mcp.json             # Registers this server as a stdio MCP server (no absolute local paths)
 ├─ tests/                       # pytest suite (37 files)
-└─ webapi_extractor/
+└─ scry_mcp_gen/
    ├─ __main__.py               # CLI: doctor | serve-http | (default) stdio
    ├─ server.py                 # MCP server and tool registration
    ├─ auth.py                   # Login flows (user-confirmed completion, never automatic) + measured login mode on disk
@@ -1192,7 +1192,7 @@ Three things to note:
     update_endpoint / extract_crypto) still have no tests — they need a real browser; **the 4
     project tools and doctor are covered** (`tests/test_iterate_tools.py`, `tests/test_doctor.py`,
     which point the data directory at a temporary directory before importing `server.py` so the
-    local `~/.webapiextractor` is untouched);
+    local `~/.scry` is untouched);
   - the iteration chain (`runbook/06-iterate.md`), user-mode isolation, and `locked` rejection are
     covered by `tests/test_iterate_chain.py` (previously uncovered; added in this round);
   - `test_proxy_env.py` has one POSIX-only case that is skipped on Windows (expected).

@@ -1,4 +1,4 @@
-"""CLI entry for ``python -m webapi_extractor``.
+"""CLI entry for ``python -m scry_mcp_gen``.
 
 Subcommands:
     (default)   start the MCP server over stdio

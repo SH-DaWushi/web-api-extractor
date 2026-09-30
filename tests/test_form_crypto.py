@@ -23,8 +23,8 @@ from urllib.parse import quote_plus
 
 import pytest
 
-from webapi_extractor.bodies import body_fields
-from webapi_extractor.crypto_analyzer import _looks_ciphertext, detect_crypto, value_shape
+from scry_mcp_gen.bodies import body_fields
+from scry_mcp_gen.crypto_analyzer import _looks_ciphertext, detect_crypto, value_shape
 
 
 # RSA-2048 密文 base64 后约 344 字符。这里用**字符分布真实**的样本：

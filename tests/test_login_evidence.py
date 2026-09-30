@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from webapi_extractor.auth import LoginManager, LoginSession, _cookie_baseline
+from scry_mcp_gen.auth import LoginManager, LoginSession, _cookie_baseline
 
 OA_HOST = "oa.example.com"
 LOGIN_URL = f"https://{OA_HOST}/login"

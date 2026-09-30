@@ -11,21 +11,21 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from webapi_extractor.analyzer import (  # noqa: E402
+from scry_mcp_gen.analyzer import (  # noqa: E402
     _heavy_response_suggestion,
     _index_capture,
     _is_noise,
     analyze_capture,
     review_suggested_hint,
 )
-from webapi_extractor.capture import CaptureSession  # noqa: E402
-from webapi_extractor.config import (  # noqa: E402
+from scry_mcp_gen.capture import CaptureSession  # noqa: E402
+from scry_mcp_gen.config import (  # noqa: E402
     MAX_RESPONSE_LIMIT_BYTES,
     RESPONSE_LIMIT_ENV,
     dropped_response_bodies_hint,
     response_limit_error,
 )
-from webapi_extractor.storage import SessionStore  # noqa: E402
+from scry_mcp_gen.storage import SessionStore  # noqa: E402
 
 
 def test_common_noise_domains_are_generic() -> None:
@@ -90,7 +90,7 @@ def test_review_suggested_hint_explains_itself_in_plain_language() -> None:
 def test_dropped_bodies_hint_names_a_real_knob() -> None:
     """S20/S24：补救提示必须指向**真实存在**且**读者做得到**的开关。
 
-    改动前它让使用者去设环境变量 ``WEB_API_EXTRACTOR_RESPONSE_LIMIT`` —— 提示的读者是
+    改动前它让使用者去设环境变量 ``SCRY_RESPONSE_LIMIT`` —— 提示的读者是
     Agent（以及不具备技术能力的使用者），那是一件他们做不了的事。现在它必须说出
     **下一步动作**：调哪个工具、传哪个参数、传什么值。
     """
@@ -261,7 +261,7 @@ class TestCaptureIsParsedLineByLine:
 
     def test_index_keeps_no_raw_event_list(self, tmp_path: Path) -> None:
         """索引里只有真正会用到的记录，不再挂一个「全部原始事件」的列表。"""
-        import webapi_extractor.analyzer as analyzer_module
+        import scry_mcp_gen.analyzer as analyzer_module
 
         index = _index_capture(self._capture(tmp_path) / "capture.jsonl")
 

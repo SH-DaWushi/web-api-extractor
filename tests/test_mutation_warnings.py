@@ -18,7 +18,7 @@ import sys
 import types
 from pathlib import Path
 
-from webapi_extractor.generator import render_server
+from scry_mcp_gen.generator import render_server
 
 HOST = "portal.example.com"
 

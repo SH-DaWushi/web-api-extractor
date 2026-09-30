@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pytest
 
-from webapi_extractor.generator import render_server
+from scry_mcp_gen.generator import render_server
 
 HOST = "portal.example.com"
 LOGIN_PATH = "/api/login"

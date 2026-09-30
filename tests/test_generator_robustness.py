@@ -23,7 +23,7 @@ import re
 
 import pytest
 
-from webapi_extractor.generator import (
+from scry_mcp_gen.generator import (
     _env_prefix,
     _py_ident,
     _site_name_from_session_id,
@@ -613,7 +613,7 @@ class TestSwitchParamsAreNeverBaked:
 
         两档都不该出现在这份名单里（名单是「用了抓包取值做默认值」的）。
         """
-        from webapi_extractor.generator import baked_param_defaults
+        from scry_mcp_gen.generator import baked_param_defaults
 
         endpoints = [{"tool_name": "get_x", "method": "GET", "host": HOST,
                       "path": "/api/x",
@@ -721,7 +721,7 @@ class TestMissingEndpointFieldsAreNamed:
             render_server(self._registry_with(endpoint))
 
     def test_direct_render_tool_call_is_not_a_keyerror(self):
-        from webapi_extractor.generator import _render_tool
+        from scry_mcp_gen.generator import _render_tool
 
         with pytest.raises(ValueError):
             _render_tool({"method": "GET"}, "PORTAL")
@@ -808,7 +808,7 @@ class TestSmokeEndpointSelection:
         这正是与上一轮默认值策略「自洽」的含义：工具签名里烘的是什么，冒烟就发什么；
         两边都不烘抓包原值（原值含身份数据、且会过期）。
         """
-        from webapi_extractor.generator import _safe_default_query
+        from scry_mcp_gen.generator import _safe_default_query
 
         raw = ('<fetch count="10"><entity name="annotation">'
                '<attribute name="subject"/></entity></fetch>')

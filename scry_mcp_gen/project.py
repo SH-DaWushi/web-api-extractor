@@ -127,7 +127,7 @@ def init_project(project_dir: str | Path, site_name: str) -> dict[str, Any]:
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "captures").mkdir(exist_ok=True)
     project = {"site_name": site_name, "registry_version": 0, "locked": False,
-               "created_at": _now(), "tool": "webapi_extractor"}
+               "created_at": _now(), "tool": "scry_mcp_gen"}
     (directory / "project.json").write_text(json.dumps(project, ensure_ascii=False, indent=2), encoding="utf-8")
     registry = {"site_name": site_name, "registry_version": 0, "updated_at": _now(),
                 "hosts": {}, "endpoints": [], "auth_login": None}

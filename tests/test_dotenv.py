@@ -15,7 +15,7 @@ import re
 
 import pytest
 
-from webapi_extractor.generator import _SERVER_TEMPLATE
+from scry_mcp_gen.generator import _SERVER_TEMPLATE
 
 
 def _extract_load_dotenv_src(here: str) -> str:

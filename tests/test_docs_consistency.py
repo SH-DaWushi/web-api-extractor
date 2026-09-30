@@ -4,7 +4,7 @@
 README / docs/reference.md / runbook 是本仓库唯一的对外说明，但曾多次出现与实现
 不符的陈述，且每次都是人工偶然发现：
 
-- reference 教用户 `pip install web-api-extractor` —— 该发行版从未发布到 PyPI；
+- reference 教用户 `pip install scry-mcp-gen` —— 该发行版从未发布到 PyPI；
 - reference 的 clone 地址指向已改名的旧库，而 README 通篇没有任何仓库地址；
 - README 承诺「密码不由它保存或转发」，而 `http_login` 会把账号密码明文写进
   `auth_states/*.json`（README 与 reference 互相矛盾）；
@@ -33,8 +33,8 @@ REFERENCE_EN = (ROOT / "docs" / "reference.en.md").read_text(encoding="utf-8")
 SKILL_MD = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 RUNBOOK_AUTH = (ROOT / "runbook" / "01-authentication.md").read_text(encoding="utf-8")
 RUNBOOK_ITERATE = (ROOT / "runbook" / "06-iterate.md").read_text(encoding="utf-8")
-SERVER_SRC = (ROOT / "webapi_extractor" / "server.py").read_text(encoding="utf-8")
-PROBE_SRC = (ROOT / "webapi_extractor" / "probe.py").read_text(encoding="utf-8")
+SERVER_SRC = (ROOT / "scry_mcp_gen" / "server.py").read_text(encoding="utf-8")
+PROBE_SRC = (ROOT / "scry_mcp_gen" / "probe.py").read_text(encoding="utf-8")
 
 
 def _auth_state_windows(text: str, span: int = 250) -> list[str]:
@@ -204,8 +204,8 @@ class TestCoverageClaimsMatchTests:
     TESTS = ROOT / "tests"
 
     def _imports(self, module: str) -> bool:
-        pattern = (rf"(?:from|import)\s+webapi_extractor\.{module}\b"
-                   rf'|import_module\(["\']webapi_extractor\.{module}["\']\)')
+        pattern = (rf"(?:from|import)\s+scry_mcp_gen\.{module}\b"
+                   rf'|import_module\(["\']scry_mcp_gen\.{module}["\']\)')
         return any(re.search(pattern, path.read_text(encoding="utf-8"))
                    for path in self.TESTS.glob("*.py"))
 
@@ -260,7 +260,7 @@ class TestGeneratedReadmeSelfConsistent:
     HOST = "oa.example.com"
 
     def _readme(self) -> str:
-        from webapi_extractor.generator import render_server
+        from scry_mcp_gen.generator import render_server
 
         registry = {
             "site_name": "portal",
@@ -311,7 +311,7 @@ class TestDocsMatchCodeInventory:
 
         （顺带与 tests/test_param_alias.py 同向加固：真加了档案就得同时改文档。）
         """
-        from webapi_extractor.site_profiles import _REGISTRY
+        from scry_mcp_gen.site_profiles import _REGISTRY
         assert _REGISTRY == {}
 
 

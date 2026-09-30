@@ -5,7 +5,7 @@
 
 ## 探测登录方式
 
-调用 `probe_login(url)`（SPA 友好：domcontentloaded + 登录入口探测，超时可用 `WEB_API_EXTRACTOR_PROBE_TIMEOUT` 调）。
+调用 `probe_login(url)`（SPA 友好：domcontentloaded + 登录入口探测，超时可用 `SCRY_PROBE_TIMEOUT` 调）。
 
 - 返回的 `auth_mode` **只有两种取值**：`none`（未发现登录入口）与 `interactive`（需要交互式登录）。
   **没有 `form` 这种取值**，不要按它分支。

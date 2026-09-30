@@ -2,8 +2,8 @@
 """纯 Python 版技能打包（E-1：不依赖 PowerShell，受限环境可用）。
 
 用法：
-    python package-agent.py [-o web-api-extractor-agent.zip]
-    python package-agent.py --store [-o web-api-extractor-store.zip]
+    python package-agent.py [-o scry-mcp-gen-agent.zip]
+    python package-agent.py --store [-o scry-mcp-gen-store.zip]
 
 产出的是**技能导入包**：解压后必须自足。runbook/00 让 Agent 跑 bootstrap 与
 start_server.py / mcp_call.py，SKILL.md 的硬规则也要求用 start_server.py。
@@ -47,7 +47,7 @@ INCLUDE = (
     "run_http.py",
     "mcp_call.py",
     ".vscode",
-    "webapi_extractor",
+    "scry_mcp_gen",
     "tests",
 )
 
@@ -141,12 +141,12 @@ def build_zip(dest: Path, root: Path = ROOT, manifest=None, rename=None) -> list
     return [arcname for arcname, _ in entries]
 
 
-DEFAULT_OUTPUT = "web-api-extractor-agent.zip"
-STORE_OUTPUT = "web-api-extractor-store.zip"
+DEFAULT_OUTPUT = "scry-mcp-gen-agent.zip"
+STORE_OUTPUT = "scry-mcp-gen-store.zip"
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="打包 web-api-extractor 技能导入包")
+    parser = argparse.ArgumentParser(description="打包 scry-mcp-gen 技能导入包")
     parser.add_argument("--store", action="store_true",
                         help="打商店版（去掉开发/不支持项，LICENSE 换成商店版那份；"
                              "DISCLAIMER.md 两版都带）")

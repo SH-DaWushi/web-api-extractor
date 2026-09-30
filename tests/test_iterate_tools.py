@@ -13,7 +13,7 @@
 
 导入 `server.py` 会跑 `Settings.from_environment()` + `ensure_directories()` + `recover_orphans()`
 （后者会改真实会话状态），故本文件先把数据目录指到临时目录再导入，绝不碰本机
-`~/.webapiextractor`。
+`~/.scry`。
 """
 from __future__ import annotations
 
@@ -28,8 +28,8 @@ from typing import Any
 
 import pytest
 
-from webapi_extractor.auth import LoginSession
-from webapi_extractor.project import init_project, load_registry, save_registry
+from scry_mcp_gen.auth import LoginSession
+from scry_mcp_gen.project import init_project, load_registry, save_registry
 
 HOST = "oa.example.com"
 
@@ -38,15 +38,15 @@ HOST = "oa.example.com"
 def web(tmp_path_factory):
     """导入 server.py，并把它的数据目录固定在本模块的临时目录。"""
     data_root = tmp_path_factory.mktemp("data")
-    previous = os.environ.get("WEB_API_EXTRACTOR_DATA")
-    os.environ["WEB_API_EXTRACTOR_DATA"] = str(data_root)
+    previous = os.environ.get("SCRY_DATA")
+    os.environ["SCRY_DATA"] = str(data_root)
     try:
-        module = importlib.import_module("webapi_extractor.server")
+        module = importlib.import_module("scry_mcp_gen.server")
     finally:
         if previous is None:
-            os.environ.pop("WEB_API_EXTRACTOR_DATA", None)
+            os.environ.pop("SCRY_DATA", None)
         else:
-            os.environ["WEB_API_EXTRACTOR_DATA"] = previous
+            os.environ["SCRY_DATA"] = previous
     return module
 
 
@@ -606,7 +606,7 @@ class TestAnalyzeTrafficDigest:
         # 而不是让使用者去设环境变量（他做不到，也不需要做）。
         assert "上限" in hint and "start_capture" in hint
         assert "response_limit_bytes" in hint
-        assert "WEB_API_EXTRACTOR_RESPONSE_LIMIT" not in hint
+        assert "SCRY_RESPONSE_LIMIT" not in hint
         # 是「提示怎么补救」，不是「把大响应塞进上下文」
         assert len(json.dumps(result)) < 20000
 
@@ -1244,7 +1244,7 @@ class TestStartCaptureResponseLimit:
 
     async def test_illegal_value_is_rejected_before_any_side_effect(self, lab, monkeypatch):
         """非法值必须当场报错 —— 不能开浏览器、建会话，也不能等到抓包中途才炸。"""
-        from webapi_extractor.config import MAX_RESPONSE_LIMIT_BYTES
+        from scry_mcp_gen.config import MAX_RESPONSE_LIMIT_BYTES
 
         def _boom(*args, **kwargs):        # 真去建抓包会话就说明校验没拦住
             raise AssertionError("非法参数竟然走到了 CaptureSession()")

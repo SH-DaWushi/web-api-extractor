@@ -1,4 +1,4 @@
-﻿# web-api-extractor 一键引导脚本 (Windows PowerShell)
+﻿# scry-mcp-gen 一键引导脚本 (Windows PowerShell)
 # 作用：调用 bootstrap.py 建立独立 venv（隔离可能损坏的全局 user site-packages）、
 #       装依赖 + Playwright Chromium 内核，最后跑 doctor 自检。
 # 用法：在本目录执行   powershell -ExecutionPolicy Bypass -File .\bootstrap.ps1

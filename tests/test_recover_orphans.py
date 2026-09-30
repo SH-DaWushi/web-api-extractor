@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from webapi_extractor.auth import _site_key
-from webapi_extractor.storage import (
+from scry_mcp_gen.auth import _site_key
+from scry_mcp_gen.storage import (
     ACTIVE_STATES,
     ALIVE,
     DEAD,
@@ -271,7 +271,7 @@ class TestInstanceIdentity:
     @pytest.mark.skipif(os.name != "nt", reason="Windows 专用：不能靠 os.kill(pid, 0) 判活")
     def test_windows_probe_does_not_go_through_os_kill(self, monkeypatch):
         """Windows 上 os.kill(pid, 0) 会真的发信号/抛错，判活必须走 OpenProcess 那条路。"""
-        from webapi_extractor import storage
+        from scry_mcp_gen import storage
 
         def _boom(pid: int):
             raise AssertionError("Windows 分支不得调用 POSIX 的 os.kill(pid, 0)")

@@ -23,7 +23,7 @@ from typing import Any
 ACTIVE_STATES = {"capturing", "paused", "stopping", "authenticating"}
 
 # --------------------------------------------------------------------------- #
-# S8：多实例共享一个数据根（``WEB_API_EXTRACTOR_DATA``）时，谁能回收谁
+# S8：多实例共享一个数据根（``SCRY_DATA``）时，谁能回收谁
 #
 # 修复前 ``recover_orphans`` 把「任何处于活动状态的会话」都当孤儿，于是实例 A
 # 启动时会把**实例 B 正在抓取**的会话判死并改写。现在每个运行中的实例有一个
@@ -231,7 +231,7 @@ class InstanceRegistry:
         <data_root>/instances/<token>.json     # 每个运行实例一个：pid / 启动指纹 / 心跳
         <data_root>/sessions/<sid>/owner.json  # 该会话由哪个实例创建
 
-    一个数据根可以被多个正在运行的实例共享（``WEB_API_EXTRACTOR_DATA``）；
+    一个数据根可以被多个正在运行的实例共享（``SCRY_DATA``）；
     ``owner_state`` 是 ``recover_orphans`` 唯一的判据。
     """
 

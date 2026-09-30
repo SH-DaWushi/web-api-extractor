@@ -16,10 +16,10 @@ from pathlib import Path
 
 import pytest
 
-from webapi_extractor.analyzer import analyze_capture
-from webapi_extractor.bodies import body_fields, parse_form_urlencoded
-from webapi_extractor.generator import _param_decl, _render_tool, render_server
-from webapi_extractor.project import session_to_registry_entries
+from scry_mcp_gen.analyzer import analyze_capture
+from scry_mcp_gen.bodies import body_fields, parse_form_urlencoded
+from scry_mcp_gen.generator import _param_decl, _render_tool, render_server
+from scry_mcp_gen.project import session_to_registry_entries
 
 URL = "https://portal.example.com/api/portal/dashboard/data"
 FORM_BODY = "section=4&companyId=2&menuIds=0%2C4&includeHidden=false"
@@ -74,7 +74,7 @@ class TestRedactionPreservesStructure:
     """脱敏必须只遮值、不破坏键名——analyzer 的参数推断依赖同一份请求体。"""
 
     def test_key_names_identical_after_redaction(self):
-        from webapi_extractor.redaction import redact_payload
+        from scry_mcp_gen.redaction import redact_payload
 
         body = "section=4&companyId=2&menuIds=0%2C4&password=Secret1&submit"
         red, _, _ = redact_payload(body)
@@ -87,7 +87,7 @@ class TestRedactionPreservesStructure:
 
     def test_redacted_body_keeps_field_names(self):
         """脱敏后的体仍能解析出全套字段名（analyzer 走的就是这条路径）。"""
-        from webapi_extractor.redaction import redact_payload
+        from scry_mcp_gen.redaction import redact_payload
 
         red, _, _ = redact_payload("section=4&companyId=2&password=Secret1&submit")
         assert parse_form_urlencoded(red) is not None
@@ -245,7 +245,7 @@ class TestParamDeclGate:
 
 class TestTemplateSupport:
     def test_template_has_form_channel(self):
-        from webapi_extractor.generator import _SERVER_TEMPLATE
+        from scry_mcp_gen.generator import _SERVER_TEMPLATE
         assert "form_body" in _SERVER_TEMPLATE
         assert "application/x-www-form-urlencoded" in _SERVER_TEMPLATE
 

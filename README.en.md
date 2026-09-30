@@ -1,4 +1,4 @@
-# WebAPIExtractor
+# scry-mcp-gen
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
@@ -15,7 +15,7 @@
 Plenty of systems only have a web UI and no API. You want your AI assistant to look things up,
 file tickets, or pull reports for you, but it cannot reach that system at all.
 
-WebAPIExtractor takes a direct approach:
+scry-mcp-gen takes a direct approach:
 
 > **However you click through the site, it records it — then turns those operations into tools your AI can call.**
 
@@ -49,16 +49,16 @@ any technical terminology.
 Two ways; pick one — **you do not install any library, and you do not run any command**:
 
 - **Drop it into the skills settings page** — drag the skill folder (or the
-  `web-api-extractor-agent.zip` import package) into your AI assistant's **Skills** settings page.
+  `scry-mcp-gen-agent.zip` import package) into your AI assistant's **Skills** settings page.
   The exact entry point differs between clients, but every one of them keeps it under skill settings.
 - **Drop it into the conversation and let the agent install it** — drag the skill folder (or the zip)
   into the conversation and tell the AI "please install this skill for me".
 
-> Where does the zip come from? Download `web-api-extractor-agent.zip` from the
+> Where does the zip come from? Download `scry-mcp-gen-agent.zip` from the
 > [Releases page](https://github.com/SH-DaWushi/web-api-extractor/releases/latest) — it is the skill
 > folder itself, packaged. Identical contents; you just do not have to pull the whole repository.
 
-Once installed, **web-api-extractor** appears in your skill list. Your AI assistant now has a new
+Once installed, **scry-mcp-gen** appears in your skill list. Your AI assistant now has a new
 capability: **walking through a login with you in a real browser, recording what you do, and
 turning it into tools.**
 
@@ -214,7 +214,7 @@ You do not need to follow what happens in between — that is the AI's job.
 |---|---|
 | Do I need to know how to program? | No. It is all conversation plus browser interaction. |
 | Are my account and password safe? | **In the session file the cookies are plaintext and the account/password are stored encrypted** (a JSON file under the local `auth_states/` directory; `http_login` encrypts them with Windows DPAPI into a `secrets_enc` field, decryptable only by the same Windows user on the same machine, and if DPAPI is unavailable nothing is written rather than plaintext; a legacy file may stay plaintext until it is read), so it can only stay on your own computer — **do not commit it, sync it, screenshot it, or share it**. During capture, redaction covers the **request side**: a JSON/form field whose name looks like a credential (including synonyms such as `password` / `pass` / `pin` / `otp` / `token` / `api_key`, and form bodies with valueless control segments) has its value replaced with `***`, and `Authorization` / token-bearing headers are masked too; but **URLs and response bodies are not redacted**, and request bodies that are neither JSON nor form-encoded (`multipart`, XML, plain text) are not redacted either. In the generated project credentials are stored encrypted (Windows only). Full details in the technical documentation's "Security design" (see [Learn more](#learn-more) at the end). |
-| Is any data uploaded to the cloud? | No. Everything is recorded in a data directory on your own computer (`~/.webapiextractor`). |
+| Is any data uploaded to the cloud? | No. Everything is recorded in a data directory on your own computer (`~/.scry`). |
 | Which systems are supported? | Any system you can log into and operate in a browser — including internal systems behind CAPTCHAs, SMS verification, or single sign-on (those go through interactive authorization; **an expired session needs one login by you**, it will not renew automatically — the generated project opens the browser window for that). |
 | How complex a feature can it handle? | It depends on what you clicked through in the browser. File upload, GraphQL, and binary interfaces are out of scope; WebSocket frame contents are recorded in the capture but are not turned into tools — see "It cannot" above. |
 | Can I share the generated tools? | Yes. Hand the distribution package to a colleague; they can call the tools but cannot modify the tool set. |

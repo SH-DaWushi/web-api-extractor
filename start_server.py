@@ -67,12 +67,12 @@ def _python() -> Path:
     try:
         if str(ROOT) not in sys.path:
             sys.path.insert(0, str(ROOT))
-        from webapi_extractor.config import Settings
+        from scry_mcp_gen.config import Settings
 
         data_root = Settings.from_environment().data_root
     except Exception:
         # config 不可导入，或某个无关的数值型环境变量写坏 —— 退回同一条默认规则。
-        data_root = Path(os.environ.get("WEB_API_EXTRACTOR_DATA", "~/.webapiextractor")).expanduser()
+        data_root = Path(os.environ.get("SCRY_DATA", "~/.scry")).expanduser()
 
     for venv_dir in (data_root / "venv", ROOT / ".venv"):
         for rel in (("Scripts", "python.exe"), ("bin", "python")):

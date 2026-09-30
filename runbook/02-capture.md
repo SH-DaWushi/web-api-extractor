@@ -8,12 +8,12 @@
   此时的 `status` 是**预期状态、不是「已就绪」的确认**（首个页面 `page.goto` 自身上限 30 秒）。
   所以**别把它一返回就当「可以立刻操作了」**：先确认浏览器窗口已打开、页面加载完成再让用户操作，
   否则这段窗口内的请求不会被记录。
-- **代理是自动的，别让用户去设环境变量**：`WEB_API_EXTRACTOR_PROXY_MODE` 默认 `auto` ——
+- **代理是自动的，别让用户去设环境变量**：`SCRY_PROXY_MODE` 默认 `auto` ——
   抓包浏览器**先直连**（等价 `--no-proxy-server`）；首个页面若以**代理类形态**失败
   （`ERR_EMPTY_RESPONSE` / `ERR_CONNECTION_TIMED_OUT` / `ERR_PROXY_CONNECTION_FAILED` 等），
   服务**自动改用系统代理重试一次**。直连通的站点直连走、必须经代理才通的站点自动退到系统代理，
   **用户什么都不用设**。只有他明确要求「就直连 / 就走代理」时才提示设
-  `WEB_API_EXTRACTOR_PROXY_MODE=direct|system` 并**重启服务**（只对新开的会话生效；已开着的窗口不变）。
+  `SCRY_PROXY_MODE=direct|system` 并**重启服务**（只对新开的会话生效；已开着的窗口不变）。
 - **看到 `proxy_fallback` 要如实转述**：响应里出现 `proxy_fallback`（含 `from` / `to`）说明这次是
   **自动回退**才通的，`message` 末尾也写了「已自动改用系统代理重试」。这句话要带给用户 —— 否则
   他只看到「成功了」，下次换个站点失败时连「代理会被自动切换」这件事都不知道。
@@ -57,7 +57,7 @@
   `1 ~ 67108864`（64 MB，上限是为了别让一条大响应把只追加、不轮转的 `capture.jsonl` 写满），
   非法值会直接被拒并返回 `invalid_response_limit_bytes` + 一句写明合法范围的话（详见
   `docs/reference.md` 的「数据目录体积与响应上限语义」）。
-  > **别让使用者去设环境变量**：`WEB_API_EXTRACTOR_RESPONSE_LIMIT` 是运维/技术侧的开关，
+  > **别让使用者去设环境变量**：`SCRY_RESPONSE_LIMIT` 是运维/技术侧的开关，
   > 提示语里给出的是上面这条工具调用 —— Agent 自己就能替用户完成「调大上限后重抓」。
 - **跨进程 iframe（OOPIF）与 WebSocket 帧也会被记录**，事件形状与已知边界见
   `docs/reference.md` 的「capture.jsonl 事件类型与会话维度」。三条最要紧的：

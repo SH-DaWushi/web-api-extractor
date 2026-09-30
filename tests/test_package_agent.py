@@ -92,7 +92,7 @@ class TestPackageIsSelfSufficient:
         "mcp_call.py",
         "run_http.py",
         "install-agent.ps1",
-        "webapi_extractor/server.py",
+        "scry_mcp_gen/server.py",
     ])
     def test_required_member_present(self, built, required):
         _, names = built
@@ -102,7 +102,7 @@ class TestPackageIsSelfSufficient:
         """套一层目录的话技能导入认不出 —— 解压后 SKILL.md 必须在根上。"""
         _, names = built
         assert "SKILL.md" in names
-        assert not any(n.startswith("web-api-extractor/") for n in names)
+        assert not any(n.startswith("scry-mcp-gen/") for n in names)
 
     def test_every_runbook_module_packaged(self, built):
         _, names = built
@@ -170,7 +170,7 @@ class TestStorePackage:
         "start_server.py",
         "mcp_call.py",
         "run_http.py",
-        "webapi_extractor/server.py",
+        "scry_mcp_gen/server.py",
         "runbook/00-environment.md",
         "requirements.txt",
     ])
@@ -181,7 +181,7 @@ class TestStorePackage:
     def test_skill_md_is_at_package_root(self, built_store):
         _, names = built_store
         assert "SKILL.md" in names
-        assert not any(n.startswith("web-api-extractor/") for n in names)
+        assert not any(n.startswith("scry-mcp-gen/") for n in names)
 
     def test_carries_store_license_not_repo_license(self, built_store):
         """商店包只能带一份授权，且必须是商店版那份（不是仓库的非商业 LICENSE）。"""

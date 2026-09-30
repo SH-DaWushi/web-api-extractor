@@ -23,16 +23,16 @@ from pathlib import Path
 
 import pytest
 
-from webapi_extractor import auth as auth_module
-from webapi_extractor import win_crypto
-from webapi_extractor.auth import (
+from scry_mcp_gen import auth as auth_module
+from scry_mcp_gen import win_crypto
+from scry_mcp_gen.auth import (
     LoginManager,
     _merge_encrypted_secrets,
     _preserve_encrypted_secrets,
     _site_key,
     read_auth_state_secrets,
 )
-from webapi_extractor.generator import render_server
+from scry_mcp_gen.generator import render_server
 
 HOST = "portal.example.com"
 ACCOUNT = "alice"
@@ -538,7 +538,7 @@ class TestMergeHelpers:
 def test_repo_tool_count_is_still_21():
     """硬护栏：工具数不得因「一次输入」而变。"""
     source = (Path(__file__).resolve().parents[1]
-              / "webapi_extractor" / "server.py").read_text(encoding="utf-8")
+              / "scry_mcp_gen" / "server.py").read_text(encoding="utf-8")
     assert source.count("@mcp.tool()") == 21
 
 

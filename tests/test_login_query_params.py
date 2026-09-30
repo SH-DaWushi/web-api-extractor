@@ -36,8 +36,8 @@ from pathlib import Path
 
 import pytest
 
-from webapi_extractor.generator import render_server
-from webapi_extractor.project import (
+from scry_mcp_gen.generator import render_server
+from scry_mcp_gen.project import (
     export_user_package,
     init_project,
     load_registry,
@@ -106,7 +106,7 @@ class TestAnalyzerKeepsLoginQueryEvidence:
     """
 
     def test_login_keeps_all_values_and_evidence(self):
-        from webapi_extractor.analyzer import detect_auth_login
+        from scry_mcp_gen.analyzer import detect_auth_login
 
         login_ep = {
             "endpoint_id": "ep_001", "method": "POST", "host": HOST,
@@ -130,7 +130,7 @@ class TestAnalyzerKeepsLoginQueryEvidence:
     def test_crypto_detection_accepts_both_shapes(self):
         """`detect_password_encryption` 读 `query_params["encrypt"]`：
         list（新）与标量（老 registry）都要认，否则加密策略会静默消失。"""
-        from webapi_extractor.crypto_analyzer import detect_password_encryption
+        from scry_mcp_gen.crypto_analyzer import detect_password_encryption
 
         assert detect_password_encryption(None, _login({"encrypt": ["2"]})) == {
             "scheme": "rsa-oaep-sha256", "version": "2", "public_key": None}
@@ -185,7 +185,7 @@ class TestAuthLoginQueryValuesAreSanitised:
         set_auth_login(project, _login({"token": [SECRET], "encrypt": ["2"]}))
         save_registry(project, load_registry(project))
         # 再渲染一次生成物（server.py / README.md / .env.example 都进分发包）
-        from webapi_extractor.generator import write_files
+        from scry_mcp_gen.generator import write_files
         write_files(project, {k: v for k, v in render_server(load_registry(project)).items()
                               if k != "registry.json"})
         export_user_package(project, tmp_path / "dist")
@@ -643,7 +643,7 @@ class TestExtractorToolCountUnchanged:
     def test_extractor_server_still_exposes_21_tools(self):
         """本次修改只动 project/analyzer/generator，抽取器自身的工具面不得变。"""
         source = (Path(__file__).resolve().parents[1]
-                  / "webapi_extractor" / "server.py").read_text(encoding="utf-8")
+                  / "scry_mcp_gen" / "server.py").read_text(encoding="utf-8")
         assert source.count("@mcp.tool()") == 21
 
     def test_generated_login_tool_keeps_its_name_and_credentials(self):

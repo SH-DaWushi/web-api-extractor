@@ -32,8 +32,8 @@ sys.path.insert(0, str(ROOT))
 GUARDED = (
     ROOT / "bootstrap.py",
     ROOT / "start_server.py",
-    ROOT / "webapi_extractor" / "doctor.py",
-    ROOT / "webapi_extractor" / "generator.py",
+    ROOT / "scry_mcp_gen" / "doctor.py",
+    ROOT / "scry_mcp_gen" / "generator.py",
 )
 
 _SPAWN = re.compile(r"subprocess\.(run|call|check_call|check_output|Popen)\s*\(")
@@ -88,7 +88,7 @@ class TestEverySpawnIsWindowless:
         `generator.py` 里那两段是**发到用户机器上**的代码：用户拿到的 MCP 服务在
         启动时会补装 playwright / Chromium，那正是「服务一启动就弹黑框」的来源。
         """
-        template = (ROOT / "webapi_extractor" / "generator.py").read_text(encoding="utf-8")
+        template = (ROOT / "scry_mcp_gen" / "generator.py").read_text(encoding="utf-8")
         for needle in ('"-m", "pip", "install"', '"-m", "playwright", "install", "chromium"'):
             assert needle in template, f"生成物模板里找不到补装调用：{needle}"
         assert template.count("CREATE_NO_WINDOW") >= 2, \
@@ -97,7 +97,7 @@ class TestEverySpawnIsWindowless:
     def test_non_windows_passes_zero(self):
         """POSIX 上 creationflags 必须为 0，否则 subprocess 直接 ValueError。"""
         for path in (ROOT / "bootstrap.py", ROOT / "start_server.py",
-                     ROOT / "webapi_extractor" / "doctor.py"):
+                     ROOT / "scry_mcp_gen" / "doctor.py"):
             text = path.read_text(encoding="utf-8")
             assert 'if sys.platform == "win32" else 0' in text or \
                    'if IS_WIN else 0' in text, f"{path.name} 没有做非 Windows 归零"

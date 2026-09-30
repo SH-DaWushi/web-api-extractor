@@ -1,17 +1,17 @@
 {
   "servers": {
-    "web-api-extractor": {
+    "scry-mcp-gen": {
       "type": "stdio",
       "command": "python",
       "args": [
         "-m",
-        "webapi_extractor"
+        "scry_mcp_gen"
       ],
       "cwd": "${workspaceFolder}",
       "env": {
-        "WEB_API_EXTRACTOR_DATA": "${userHome}/.webapiextractor",
-        "WEB_API_EXTRACTOR_RESPONSE_LIMIT": "262144",
-        "WEB_API_EXTRACTOR_IDLE_TIMEOUT": "300"
+        "SCRY_DATA": "${userHome}/.scry",
+        "SCRY_RESPONSE_LIMIT": "262144",
+        "SCRY_IDLE_TIMEOUT": "300"
       }
     }
   }

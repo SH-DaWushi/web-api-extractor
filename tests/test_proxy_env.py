@@ -24,8 +24,8 @@ import sys
 import httpx
 import pytest
 
-from webapi_extractor.generator import _SERVER_TEMPLATE
-from webapi_extractor.proxy_env import sanitize_no_proxy
+from scry_mcp_gen.generator import _SERVER_TEMPLATE
+from scry_mcp_gen.proxy_env import sanitize_no_proxy
 
 
 # Cherry Studio 实际写入的形态：裸 ::1 与方括号 [::1] 同时存在。
@@ -183,7 +183,7 @@ class TestRuntimeEnvHardening:
         from pathlib import Path as _Path
 
         root = _Path(__file__).resolve().parents[1]
-        for rel in ("webapi_extractor/capture.py", "webapi_extractor/auth.py"):
+        for rel in ("scry_mcp_gen/capture.py", "scry_mcp_gen/auth.py"):
             text = (root / rel).read_text(encoding="utf-8")
             assert "no_viewport=True" in text, (
                 f"{rel} 未设 no_viewport=True：拖动窗口时页面布局不会随窗口调整")
@@ -194,9 +194,9 @@ class TestRuntimeEnvHardening:
         root = _Path(__file__).resolve().parents[1]
         # 按「文件里出现该参数」断言，而不是钉住整行文本 —— 参数顺序或换行变化
         # 不该让守卫变红（钉字符串曾经在加 no_viewport 时误伤过一次）。
-        for rel in ("webapi_extractor/probe.py",
-                    "webapi_extractor/auth.py",
-                    "webapi_extractor/capture.py"):
+        for rel in ("scry_mcp_gen/probe.py",
+                    "scry_mcp_gen/auth.py",
+                    "scry_mcp_gen/capture.py"):
             text = (root / rel).read_text(encoding="utf-8")
             assert "ignore_https_errors=True" in text, (
                 f"{rel} 未放开自签名证书校验：内网设备（自签名是常态）上探测/登录/抓包"
@@ -212,7 +212,7 @@ def test_generated_server_sanitizes_proxy_before_importing_fastmcp():
     import sys as _sys
     from pathlib import Path as _Path
     _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
-    from webapi_extractor.generator import render_server
+    from scry_mcp_gen.generator import render_server
 
     registry = {"site_name": "portal", "registry_version": 1,
                 "hosts": {"oa.example.com": {"scheme": None, "cookie_names": []}},

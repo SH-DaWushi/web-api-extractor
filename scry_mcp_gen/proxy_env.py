@@ -46,7 +46,7 @@ _NO_PROXY_VARS = ("NO_PROXY", "no_proxy")
 # 抓包浏览器（Chromium）的代理开关
 # --------------------------------------------------------------------------- #
 # 设置项名（`config.Settings.proxy_mode`）。取值只有三个，非法值必须给**明确错误**。
-PROXY_MODE_ENV = "WEB_API_EXTRACTOR_PROXY_MODE"
+PROXY_MODE_ENV = "SCRY_PROXY_MODE"
 # **默认 `auto`：先直连，遇到代理形态的失败自动改用系统代理重试一次。**
 #
 # 为什么默认不是「只直连」：直连是**正确的起点**（Chromium 不加任何代理参数会静默跟随

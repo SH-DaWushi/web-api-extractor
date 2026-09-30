@@ -30,15 +30,15 @@ from pathlib import Path
 
 import pytest
 
-import webapi_extractor.auth as auth_module
-from webapi_extractor import win_crypto
-from webapi_extractor.auth import (
+import scry_mcp_gen.auth as auth_module
+from scry_mcp_gen import win_crypto
+from scry_mcp_gen.auth import (
     LoginManager,
     LoginSession,
     http_login,
     read_auth_state_secrets,
 )
-from webapi_extractor.capture import CaptureSession
+from scry_mcp_gen.capture import CaptureSession
 
 URL = "https://oa.example.com/login/login.jsp"
 HOST = "oa.example.com"
@@ -302,7 +302,7 @@ class _TimeShim:
 class TestCaptureDoesNotAutoStart:
     async def _run_monitor(self, monkeypatch, cookies):
         """跑 _login_monitor，返回 (session, enter_capturing 调用次数, 轮询计数器)。"""
-        import webapi_extractor.capture as capture_module
+        import scry_mcp_gen.capture as capture_module
 
         session = CaptureSession("probe", URL, store=None, response_limit=1, idle_timeout=9999)
         session.context = _FakeContext(cookies)
@@ -478,8 +478,8 @@ class TestDialogIsShared:
     """
 
     def test_both_sides_use_the_same_module(self):
-        import webapi_extractor.auth as auth_module
-        import webapi_extractor.capture as capture_module
+        import scry_mcp_gen.auth as auth_module
+        import scry_mcp_gen.capture as capture_module
 
         assert auth_module.dialog is capture_module.dialog
 
@@ -490,7 +490,7 @@ class TestDialogIsShared:
             assert "tkinter" not in source, f"{cls.__name__} 不应内嵌平台实现"
 
     async def test_ask_yes_no_async_returns_the_thread_result(self, monkeypatch):
-        from webapi_extractor import dialog
+        from scry_mcp_gen import dialog
 
         monkeypatch.setattr(dialog, "ask_yes_no", lambda prompt, title=None: True)
 
@@ -500,7 +500,7 @@ class TestDialogIsShared:
         """阻塞函数必须跑在 daemon 线程上，事件循环要能继续调度。"""
         import time as _time
 
-        from webapi_extractor import dialog
+        from scry_mcp_gen import dialog
 
         ticks: list[int] = []
 

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from webapi_extractor.analyzer import (
+from scry_mcp_gen.analyzer import (
     PROVENANCE_SUSPECTED,
     PROVENANCE_UNKNOWN,
     analyze_capture,
@@ -382,7 +382,7 @@ class TestDirectApiDegradesSafely:
 class TestGeneratorNeverSeesTheField:
     def test_extractor_tool_count_unchanged(self):
         source = (Path(__file__).resolve().parents[1]
-                  / "webapi_extractor" / "server.py").read_text(encoding="utf-8")
+                  / "scry_mcp_gen" / "server.py").read_text(encoding="utf-8")
         assert source.count("@mcp.tool()") == 21
 
     def test_provenance_is_not_in_the_registry_it_ships(self, tmp_path):
@@ -392,8 +392,8 @@ class TestGeneratorNeverSeesTheField:
         凭据类 query 取值被洗成 `***`）→ ``render_server``。``csrf`` 有可自动取用的来源，
         生成器发射的是**取用代码**（去来源接口现取），真值既不落 registry 也不进产物。
         """
-        from webapi_extractor.generator import render_server
-        from webapi_extractor.project import init_project, load_registry, set_auth_login
+        from scry_mcp_gen.generator import render_server
+        from scry_mcp_gen.project import init_project, load_registry, set_auth_login
 
         events = [_request("cfg", f"https://{HOST}/api/config"), _response("cfg"),
                   _body("cfg", json.dumps({"csrf": VALUE}))] + _login_events()
@@ -420,8 +420,8 @@ class TestGeneratorNeverSeesTheField:
         `_AUTH_LOGIN_CFG` 里也没有这个键；(2) 取用计划指名了来源端点（否则等于没做）。
         registry.json 必须**保留**整份记录。
         """
-        from webapi_extractor.generator import render_server
-        from webapi_extractor.project import init_project, load_registry, set_auth_login
+        from scry_mcp_gen.generator import render_server
+        from scry_mcp_gen.project import init_project, load_registry, set_auth_login
 
         source_path = "/api/init-config"
         events = [_request("cfg", f"https://{HOST}{source_path}"), _response("cfg"),
@@ -460,15 +460,15 @@ def web(tmp_path_factory):
     import os
 
     data_root = tmp_path_factory.mktemp("data")
-    previous = os.environ.get("WEB_API_EXTRACTOR_DATA")
-    os.environ["WEB_API_EXTRACTOR_DATA"] = str(data_root)
+    previous = os.environ.get("SCRY_DATA")
+    os.environ["SCRY_DATA"] = str(data_root)
     try:
-        module = importlib.import_module("webapi_extractor.server")
+        module = importlib.import_module("scry_mcp_gen.server")
     finally:
         if previous is None:
-            os.environ.pop("WEB_API_EXTRACTOR_DATA", None)
+            os.environ.pop("SCRY_DATA", None)
         else:
-            os.environ["WEB_API_EXTRACTOR_DATA"] = previous
+            os.environ["SCRY_DATA"] = previous
     return module
 
 

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """版本号三处必须一致：`pyproject.toml` / `__version__` / 最新 git tag。
 
-版本号此前重复写在两个文件里（`pyproject.toml` 与 `webapi_extractor/__init__.py`），
+版本号此前重复写在两个文件里（`pyproject.toml` 与 `scry_mcp_gen/__init__.py`），
 彼此没有任何联动 —— 发布时只改一处就会静默漂移。而 git 标签是**公开且难以收回**的：
 打错了要删标签重打，release URL 还会留下痕迹。
 
@@ -33,9 +33,9 @@ def _pyproject_version() -> str:
 
 
 def _dunder_version() -> str:
-    text = (ROOT / "webapi_extractor" / "__init__.py").read_text(encoding="utf-8")
+    text = (ROOT / "scry_mcp_gen" / "__init__.py").read_text(encoding="utf-8")
     found = _DUNDER_LINE.search(text)
-    assert found, "webapi_extractor/__init__.py 里没有 __version__"
+    assert found, "scry_mcp_gen/__init__.py 里没有 __version__"
     return found.group(1)
 
 

@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from webapi_extractor import doctor
-from webapi_extractor.config import Settings
+from scry_mcp_gen import doctor
+from scry_mcp_gen.config import Settings
 
 
 class TestPackageCheck:
@@ -38,7 +38,7 @@ class TestPackageCheck:
 
 class TestDataDirCheck:
     def test_writable_data_dir_passes_and_leaves_no_probe(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("WEB_API_EXTRACTOR_DATA", str(tmp_path / "data"))
+        monkeypatch.setenv("SCRY_DATA", str(tmp_path / "data"))
         assert doctor.check_data_dir() is True
         assert not (tmp_path / "data" / ".doctor_probe").exists()
 
@@ -46,12 +46,12 @@ class TestDataDirCheck:
         """路径被文件占住时，ensure_directories 会失败 —— 必须报 FAIL 而不是崩。"""
         blocker = tmp_path / "data"
         blocker.write_text("not a directory", encoding="utf-8")
-        monkeypatch.setenv("WEB_API_EXTRACTOR_DATA", str(blocker))
+        monkeypatch.setenv("SCRY_DATA", str(blocker))
         assert doctor.check_data_dir() is False
 
     def test_auth_states_dir_is_created_with_gitignore(self, monkeypatch, tmp_path):
         """自检顺带建目录：auth_states 放登录态（Cookie 明文、账号密码 DPAPI 加密），必须自带 .gitignore。"""
-        monkeypatch.setenv("WEB_API_EXTRACTOR_DATA", str(tmp_path / "data"))
+        monkeypatch.setenv("SCRY_DATA", str(tmp_path / "data"))
         doctor.check_data_dir()
         auth_states = tmp_path / "data" / "auth_states"
         assert (auth_states / ".gitignore").read_text(encoding="utf-8").startswith("*")
@@ -70,7 +70,7 @@ class TestMainReport:
         monkeypatch.setattr(doctor, "check_chromium", lambda: True)
 
     def test_report_runs_to_completion(self, monkeypatch, tmp_path, capsys):
-        monkeypatch.setenv("WEB_API_EXTRACTOR_DATA", str(tmp_path / "data"))
+        monkeypatch.setenv("SCRY_DATA", str(tmp_path / "data"))
         rc = doctor.main([])
         out = capsys.readouterr().out
 
@@ -82,7 +82,7 @@ class TestMainReport:
 
     def test_install_is_not_triggered_without_the_flag(self, monkeypatch, tmp_path):
         """`--install` 才会动手装东西；裸跑必须只检查。"""
-        monkeypatch.setenv("WEB_API_EXTRACTOR_DATA", str(tmp_path / "data"))
+        monkeypatch.setenv("SCRY_DATA", str(tmp_path / "data"))
         calls: list = []
         monkeypatch.setattr(doctor, "install", lambda *a, **k: calls.append(a))
 
@@ -94,7 +94,7 @@ class TestMainReport:
 @pytest.mark.parametrize("path_part", ["data", "nested/deeper/data"])
 def test_data_dir_is_created_even_when_nested(monkeypatch, tmp_path, path_part):
     target = tmp_path / path_part
-    monkeypatch.setenv("WEB_API_EXTRACTOR_DATA", str(target))
+    monkeypatch.setenv("SCRY_DATA", str(target))
     assert doctor.check_data_dir() is True
     assert Path(target).is_dir()
 
@@ -103,19 +103,19 @@ class TestConfigEnvParsing:
     """D4：畸形环境变量不得抛裸 ``ValueError`` 把整个服务在 import 期整死。"""
 
     ENV_VARS = (
-        "WEB_API_EXTRACTOR_RESPONSE_LIMIT",
-        "WEB_API_EXTRACTOR_IDLE_TIMEOUT",
-        "WEB_API_EXTRACTOR_MAX_SESSIONS",
-        "WEB_API_EXTRACTOR_NOISE_RESPONSE_BYTES",
-        "WEB_API_EXTRACTOR_NOISE_SAMPLE_COUNT",
+        "SCRY_RESPONSE_LIMIT",
+        "SCRY_IDLE_TIMEOUT",
+        "SCRY_MAX_SESSIONS",
+        "SCRY_NOISE_RESPONSE_BYTES",
+        "SCRY_NOISE_SAMPLE_COUNT",
     )
 
     def test_malformed_value_names_variable_and_bad_value(self, monkeypatch):
-        monkeypatch.setenv("WEB_API_EXTRACTOR_MAX_SESSIONS", "notanint")
+        monkeypatch.setenv("SCRY_MAX_SESSIONS", "notanint")
         with pytest.raises(ValueError) as exc:
             Settings.from_environment()
         message = str(exc.value)
-        assert "WEB_API_EXTRACTOR_MAX_SESSIONS" in message
+        assert "SCRY_MAX_SESSIONS" in message
         assert "notanint" in message
 
     @pytest.mark.parametrize("name", ENV_VARS)
@@ -132,11 +132,11 @@ class TestConfigEnvParsing:
         assert settings.response_body_limit == 256 * 1024
 
     def test_whitespace_is_tolerated(self, monkeypatch):
-        monkeypatch.setenv("WEB_API_EXTRACTOR_MAX_SESSIONS", " 4 ")
+        monkeypatch.setenv("SCRY_MAX_SESSIONS", " 4 ")
         assert Settings.from_environment().max_sessions == 4
 
     def test_non_positive_still_rejected(self, monkeypatch):
-        monkeypatch.setenv("WEB_API_EXTRACTOR_MAX_SESSIONS", "0")
+        monkeypatch.setenv("SCRY_MAX_SESSIONS", "0")
         with pytest.raises(ValueError, match="positive"):
             Settings.from_environment()
 
@@ -196,9 +196,9 @@ class TestStartServerStop:
 
     def test_only_run_http_commands_are_considered_ours(self, server):
         assert server.is_project_server_command(
-            r'"D:\MCP\WebAPIExtractor\.venv\Scripts\python.exe" run_http.py') is True
+            r'"D:\MCP\scry-mcp-gen\.venv\Scripts\python.exe" run_http.py') is True
         assert server.is_project_server_command(
-            r'"C:\x\python.exe" /d/MCP/WebAPIExtractor/run_http.py') is True
+            r'"C:\x\python.exe" /d/MCP/scry-mcp-gen/run_http.py') is True
         assert server.is_project_server_command(r"C:\Windows\System32\notepad.exe a.txt") is False
         # 取不到命令行 → None（调用方不得据此盲杀）。
         assert server.is_project_server_command(None) is None

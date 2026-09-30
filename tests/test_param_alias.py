@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from webapi_extractor.analyzer import (  # noqa: E402
+from scry_mcp_gen.analyzer import (  # noqa: E402
     PARAM_ALIAS,
     parameterize,
 )
@@ -85,7 +85,7 @@ def test_generic_mapping_still_works_without_host() -> None:
 
 
 def test_site_can_override_and_extend_generic_alias() -> None:
-    from webapi_extractor.site_profiles import merge_param_alias
+    from scry_mcp_gen.site_profiles import merge_param_alias
 
     merged = merge_param_alias({"id": "id", "read": "read"},
                                {"param_alias": {"id": "custom_id", "extra": "extra_id"}})
@@ -103,15 +103,15 @@ def test_every_registered_site_profile_actually_exists() -> None:
     """
     import importlib
 
-    from webapi_extractor.site_profiles import _REGISTRY
+    from scry_mcp_gen.site_profiles import _REGISTRY
 
     for module_name in _REGISTRY.values():
-        importlib.import_module(f".{module_name}", package="webapi_extractor.site_profiles")
+        importlib.import_module(f".{module_name}", package="scry_mcp_gen.site_profiles")
 
 
 def test_profile_lookup_is_safe_without_profiles() -> None:
     """没有档案注册时，任意 host 都应安全地走通用路径。"""
-    from webapi_extractor.site_profiles import get_profile
+    from scry_mcp_gen.site_profiles import get_profile
 
     assert get_profile(SITE_HOST) is None
     assert get_profile("") is None
@@ -197,8 +197,8 @@ def test_odata_endpoint_keeps_its_key_as_a_registry_parameter(tmp_path: Path) ->
     """
     import json
 
-    from webapi_extractor.analyzer import analyze_capture
-    from webapi_extractor.project import session_to_registry_entries
+    from scry_mcp_gen.analyzer import analyze_capture
+    from scry_mcp_gen.project import session_to_registry_entries
 
     host = "crm.example.com"
     lines = []

@@ -13,8 +13,8 @@ from urllib.parse import quote_plus
 
 import pytest
 
-from webapi_extractor.bodies import parse_form_urlencoded
-from webapi_extractor.redaction import _is_secret_field, redact_headers, redact_payload
+from scry_mcp_gen.bodies import parse_form_urlencoded
+from scry_mcp_gen.redaction import _is_secret_field, redact_headers, redact_payload
 
 
 class TestSecretFieldNames:

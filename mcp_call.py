@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Minimal streamable-HTTP MCP client driver for web-api-extractor.
+"""Minimal streamable-HTTP MCP client driver for scry-mcp-gen.
 
 Usage:
     python mcp_call.py <tool_name> [json_arguments]

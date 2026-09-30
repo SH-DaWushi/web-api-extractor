@@ -7,8 +7,8 @@
 做四件事：创建独立 venv → 装依赖 → 装 Playwright Chromium → 跑 doctor 自检。
 
 venv 位置：**数据目录**下的 ``<data_root>/venv``，而不是技能目录里的 ``.venv``。
-数据目录由 ``WEB_API_EXTRACTOR_DATA`` 指定，默认 ``~/.webapiextractor``（复用
-``webapi_extractor.config`` 的权威定义）。技能目录由宿主应用管理，升级时会被重新
+数据目录由 ``SCRY_DATA`` 指定，默认 ``~/.scry``（复用
+``scry_mcp_gen.config`` 的权威定义）。技能目录由宿主应用管理，升级时会被重新
 同步/替换 —— 把约 180 MB 的 venv 放在里面既可能被连带删除，又重新拉一次 Chromium。
 已装过的部署若在技能目录里留有历史的 ``ROOT/.venv``，则直接**复用它**（打印提示），
 不会再建第二份。
@@ -36,7 +36,7 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32
 
 
 def _data_root() -> Path:
-    """数据目录：优先复用 ``webapi_extractor.config`` 的权威定义。
+    """数据目录：优先复用 ``scry_mcp_gen.config`` 的权威定义。
 
     仅当 config 不可导入（例如 bootstrap.py 被单独分发）或 ``from_environment``
     因**其它**数值型变量（response limit / idle timeout …）写坏而抛错时才退回默认值 ——
@@ -45,11 +45,11 @@ def _data_root() -> Path:
     try:
         if str(ROOT) not in sys.path:
             sys.path.insert(0, str(ROOT))
-        from webapi_extractor.config import Settings
+        from scry_mcp_gen.config import Settings
 
         return Settings.from_environment().data_root
     except Exception:
-        return Path(os.environ.get("WEB_API_EXTRACTOR_DATA", "~/.webapiextractor")).expanduser()
+        return Path(os.environ.get("SCRY_DATA", "~/.scry")).expanduser()
 
 
 def _venv_python(venv_dir: Path) -> Path:
@@ -99,7 +99,7 @@ def main() -> int:
                           creationflags=NO_WINDOW)
 
     print(">> [4/4] 运行环境自检 doctor")
-    rc = subprocess.call([str(venv_py), "-m", "webapi_extractor", "doctor",
+    rc = subprocess.call([str(venv_py), "-m", "scry_mcp_gen", "doctor",
                           *(["--install"] if do_install else [])], cwd=str(ROOT),
                          creationflags=NO_WINDOW)
 

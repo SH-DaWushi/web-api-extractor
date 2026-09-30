@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Environment self-check / bootstrap helper for web-api-extractor.
+"""Environment self-check / bootstrap helper for scry-mcp-gen.
 
 Usage:
-    python -m webapi_extractor doctor            # only check, print a report
-    python -m webapi_extractor doctor --install   # check, then install what's missing
+    python -m scry_mcp_gen doctor            # only check, print a report
+    python -m scry_mcp_gen doctor --install   # check, then install what's missing
 
 Checks: Python version, required packages, Playwright Chromium kernel,
 writable data dir, and whether the local HTTP port (8422) is free.
@@ -110,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     do_install = "--install" in argv
     print("=" * 56)
-    print("web-api-extractor 环境自检 (doctor)")
+    print("scry-mcp-gen 环境自检 (doctor)")
     print("=" * 56)
     py_ok = check_python()
     missing = check_packages()
@@ -130,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
         print("环境就绪。下一步：python run_http.py 启动服务，再用 mcp_call.py 驱动工具。")
         print(f"（端口 {'空闲' if port_ok else '被占用，注意确认'}）")
         return 0
-    print("环境未就绪。可运行: python -m webapi_extractor doctor --install 自动修复。")
+    print("环境未就绪。可运行: python -m scry_mcp_gen doctor --install 自动修复。")
     return 1
 
 

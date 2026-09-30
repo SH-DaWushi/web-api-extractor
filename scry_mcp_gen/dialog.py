@@ -23,7 +23,7 @@ from typing import Callable, TypeVar
 
 _T = TypeVar("_T")
 
-DEFAULT_TITLE = "WebAPIExtractor 确认"
+DEFAULT_TITLE = "scry-mcp-gen 确认"
 
 
 def ask_yes_no(prompt: str, title: str = DEFAULT_TITLE) -> bool | None:

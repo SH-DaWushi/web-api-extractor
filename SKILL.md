@@ -1,5 +1,5 @@
 ---
-name: web-api-extractor
+name: scry-mcp-gen
 description: Extract web API traffic through browser authentication and CDP capture, analyze endpoints, and generate a Python FastMCP server.
 install_method: upload
 ---

@@ -55,7 +55,7 @@ settings.ensure_directories()
 store = SessionStore(settings.sessions_dir)
 audit = AuditLog(settings.audit_path)
 # S8：本进程的持久身份 + 心跳。多实例共享一个数据根
-# （``WEB_API_EXTRACTOR_DATA``）时，recover_orphans 只能回收「owner 可证明已消失」
+# （``SCRY_DATA``）时，recover_orphans 只能回收「owner 可证明已消失」
 # 的会话——否则实例 A 启动时会把**实例 B 正在抓取**的会话判死/改写。
 # 身份是尽力而为的旁路：写不进去（只读磁盘等）也不能让服务起不来，故整体兜异常。
 instance = InstanceRegistry(settings.instances_dir)

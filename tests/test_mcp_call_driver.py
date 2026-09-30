@@ -6,7 +6,7 @@
 它，恢复分支成了死代码。后果是服务每次重启后所有调用都崩，必须手工
 `rm .mcp_session`。
 
-mcp_call.py 是仓库根目录的脚本（不在 webapi_extractor 包内），故按路径加载。
+mcp_call.py 是仓库根目录的脚本（不在 scry_mcp_gen 包内），故按路径加载。
 
 另含 R5：**输出编码由工具自己处理对**——管道里是确定的 UTF-8（机器），
 真控制台里中文可读（人），两者都不要求用户设 `PYTHONIOENCODING` 或 `chcp`。

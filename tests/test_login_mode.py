@@ -32,10 +32,10 @@ from pathlib import Path
 
 import pytest
 
-from webapi_extractor import auth as auth_module
-from webapi_extractor.analyzer import analyze_capture, detect_auth_login
-from webapi_extractor.auth import http_login
-from webapi_extractor.generator import (
+from scry_mcp_gen import auth as auth_module
+from scry_mcp_gen.analyzer import analyze_capture, detect_auth_login
+from scry_mcp_gen.auth import http_login
+from scry_mcp_gen.generator import (
     _PLAYWRIGHT_PIN,
     render_server,
 )
@@ -337,7 +337,7 @@ class TestMeasuredVerdictReachesAnalysis:
 
     def test_verdict_lands_in_registry_which_is_what_the_generator_reads(self, tmp_path):
         """判据要能一路走到 registry.json —— 生成期读的就是它。"""
-        from webapi_extractor.project import init_project, load_registry, set_auth_login
+        from scry_mcp_gen.project import init_project, load_registry, set_auth_login
 
         project = tmp_path / "proj"
         init_project(project, "portal")
@@ -351,13 +351,13 @@ class TestSummaryKeyIsAlwaysReadable:
     """`analyze_traffic` 摘要里的 `auth_login_post_login` 键常驻（消费方可无条件读）。"""
 
     def test_summary_shape_without_login(self):
-        from webapi_extractor.analyzer import login_post_summary
+        from scry_mcp_gen.analyzer import login_post_summary
 
         assert login_post_summary(None) == {"verdict": None, "basis": None,
                                             "signals": [], "measured_reason": None}
 
     def test_summary_carries_the_verdict(self):
-        from webapi_extractor.analyzer import login_post_summary
+        from scry_mcp_gen.analyzer import login_post_summary
 
         summary = login_post_summary(_interactive_login(
             measured={"verdict": "interactive", "attempts": 2,

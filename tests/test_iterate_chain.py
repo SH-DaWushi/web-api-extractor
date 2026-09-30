@@ -25,9 +25,9 @@ from pathlib import Path
 
 import pytest
 
-from webapi_extractor.analyzer import analyze_capture
-from webapi_extractor.generator import _stable_default_value, generate, regenerate, render_server
-from webapi_extractor.project import (
+from scry_mcp_gen.analyzer import analyze_capture
+from scry_mcp_gen.generator import _stable_default_value, generate, regenerate, render_server
+from scry_mcp_gen.project import (
     DESCRIPTION_SOURCE_USER,
     diff_hosts,
     diff_registry,
@@ -889,7 +889,7 @@ class TestExportUserPackage:
             assert not re.search(rf"\b{capability}\s*\(", server), \
                 f"用户态 server.py 调用了 {capability}（不该有 registry 写入能力）"
         # 不依赖本包（注释里提到包名没关系，真正的判据是没有 import）
-        assert not re.search(r"^\s*(?:import|from)\s+webapi_extractor", server, re.M)
+        assert not re.search(r"^\s*(?:import|from)\s+scry_mcp_gen", server, re.M)
 
         # registry.json 只被诊断工具读取（tool_catalog），不得被写入
         assert '"registry.json"' in server
@@ -1078,7 +1078,7 @@ class TestRenderedFilesAreComplete:
     def test_rendered_server_is_a_standalone_deployment_unit(self):
         """server.py 是独立部署单元：只依赖 httpx/fastmcp/stdlib，不 import 本包。"""
         server = render_server(_registry([_stored()]))["server.py"]
-        assert not re.search(r"^\s*(?:import|from)\s+webapi_extractor", server, re.M)
+        assert not re.search(r"^\s*(?:import|from)\s+scry_mcp_gen", server, re.M)
         assert re.search(r"^import httpx$", server, re.M)
 
 

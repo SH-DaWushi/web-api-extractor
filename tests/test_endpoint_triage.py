@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from webapi_extractor.analyzer import (
+from scry_mcp_gen.analyzer import (
     has_pagination,
     is_odata_bound_function,
     is_single_record_path,
@@ -17,7 +17,7 @@ from webapi_extractor.analyzer import (
     require_query_param_suggestion,
     suggest_pagination,
 )
-from webapi_extractor.generator import _safe_default_query
+from scry_mcp_gen.generator import _safe_default_query
 
 
 class TestOdataBoundFunction:

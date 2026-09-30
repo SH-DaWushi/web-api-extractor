@@ -17,19 +17,19 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from webapi_extractor import capture as capture_module  # noqa: E402
-from webapi_extractor.analyzer import (  # noqa: E402
+from scry_mcp_gen import capture as capture_module  # noqa: E402
+from scry_mcp_gen.analyzer import (  # noqa: E402
     _index_capture,
     _merge_headers,
     analyze_capture,
 )
-from webapi_extractor.capture import (  # noqa: E402
+from scry_mcp_gen.capture import (  # noqa: E402
     _EMITTED_REQUEST_TTL,
     _MAX_EMITTED_REQUESTS,
     CaptureSession,
     _frame_key,
 )
-from webapi_extractor.storage import SessionStore  # noqa: E402
+from scry_mcp_gen.storage import SessionStore  # noqa: E402
 
 
 class FakeCDP:
