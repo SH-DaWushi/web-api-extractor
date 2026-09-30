@@ -17,7 +17,15 @@ def parse_form_urlencoded(payload: str | None) -> list[tuple[str, str]] | None:
     """解析表单编码体为 ``[(字段名, 原始值)]``；不像表单编码时返回 None。
 
     值保持**原始 URL 编码**（调用方按需 unquote）——脱敏需要原样回写。
-    JSON / XML / HTML 体一律不认，避免误伤。
+
+    容忍**无值控制项**：真实登录表单普遍带 ``&submit`` / ``&remember`` 这类
+    只有字段名、没有 ``=`` 的段。此前遇到它们直接判「非表单编码」返回 None，
+    脱敏层于是原样放行整个请求体——**明文密码被完整写进 capture.jsonl**（D1）。
+    现在把它们视作值为空（``("submit", "")``），字段名照常保留，
+    下游的参数推断（analyzer #23）也因此不会丢字段。
+
+    仍然不认 JSON / XML / HTML 体（``{`` / ``[`` / ``<`` 开头）与**完全不含 ``=``**
+    的正文，避免把纯文本误当表单处理。
     """
     if not payload or payload.lstrip()[:1] in ("{", "[", "<"):
         return None
@@ -27,9 +35,10 @@ def parse_form_urlencoded(payload: str | None) -> list[tuple[str, str]] | None:
     for part in payload.split("&"):
         if not part:
             continue
-        if "=" not in part:
-            return None          # 出现非 k=v 段，不认作表单编码
-        name, value = part.split("=", 1)
+        if "=" in part:
+            name, value = part.split("=", 1)
+        else:
+            name, value = part, ""   # 无值控制项：保留字段名，值按空处理
         pairs.append((name, value))
     return pairs or None
 

@@ -2,7 +2,7 @@
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
-![License](https://img.shields.io/badge/license-custom%20(non--commercial)-orange)
+![License](https://img.shields.io/badge/license-custom%20(per--edition)-orange)
 
 **English** | [简体中文](README.md)
 
@@ -35,8 +35,9 @@ any technical terminology.
 
 - A desktop AI assistant client that supports **Skills**
 - Your own computer (all data stays local)
-- **Windows** (full functionality is Windows-only; macOS / Linux can run it, but credential
-  encryption is unavailable there — see below)
+- **Windows** (the only supported platform; macOS / Linux are **not supported** and untested —
+  credential encryption relies on Windows DPAPI, and capture and interactive login must open a real
+  desktop browser window)
 - **Proper authorization** for that system — only use this on systems you are permitted to use
 
 ---
@@ -98,7 +99,7 @@ A tool set you can **keep using and keep extending**:
 |---|---|
 | Your AI can operate that system directly | No more clicking through web pages by hand |
 | The session is reusable | Both capture and later calls can carry the session; no repeated logins |
-| Automatic renewal (conditional) | When an account/password login endpoint is detected, the generated project can re-login automatically on token expiry; pure-Cookie / SSO sites need one re-authorization after expiry |
+| Automatic renewal (conditional) | When an account/password login endpoint is detected **and the request really can be constructed**, the generated project can re-login automatically on token expiry; CAPTCHA / SMS / SSO sites need **one login by you** after expiry (the generated project opens the browser window itself, so you do not have to go back to the agent) |
 | Adding features later = another walkthrough | No rebuild from scratch |
 | You can hand the package to colleagues | They can call the tools but cannot modify them |
 
@@ -116,18 +117,46 @@ A tool set you can **keep using and keep extending**:
    every request and response is recorded in the background.
 2. **Organize the endpoints automatically** — structurally identical endpoints merge
    (`/user/123`, `/user/456` → `/user/{id}`), and parameter types are derived from real samples.
+   **Values that are safe to reuse become defaults** (whatever the capture carried is what you get),
+   so neither you nor the AI has to guess "what should this parameter be". **Parameters whose value
+   changes what comes back are the exception** (for example `count=yes` on a device API: that returns
+   only a count, not the actual list) — such parameters are never hard-coded. **Where it was actually
+   measured to change what comes back** (both values appeared in the capture), the service asks you to
+   state it explicitly, so the AI does not mistake incomplete data for the whole picture; **where the
+   name merely sounds like a switch** (`page` / `sort` / `format` …), the service neither hard-codes it
+   nor insists — leave it out and it is not sent at all, so the server uses its own default; if what
+   comes back looks incomplete, call once more with another value. Before
+   you share the package, the service lists **which parameters reused captured values** (names only,
+   so you can check them) instead of quietly shipping capture data.
 3. **Cover both kinds of login** — sites where a request can be constructed use form login; CAPTCHAs,
    SMS codes, and single sign-on use interactive login in a real browser
-   (**you confirm whether login is complete**; the tool never decides that itself).
-4. **Generate a runnable MCP project** — multi-host routing, typed parameters, the auth scheme
-   actually observed, `confirm=true` required for writes, plus a smoke test and read-only diagnostics.
+   (**you confirm whether login is complete** — a workflow convention: the server can only record and
+   warn, it never decides that for you). Which kind a site is, is decided by **actually trying** —
+   a login request is really sent once and the outcome is recorded, so **the generated project
+   carries that ability too**: for a CAPTCHA site it opens a browser window and lets you log in once
+   (`login_interactive()`) when the session expires, instead of pretending it can re-login
+   automatically (which would only make you think it was configured correctly).
+   If logging in needs an extra parameter (a login page asking
+   for a one-time token, say) **and it can be fetched from a public endpoint**, the generated server
+   fetches it itself before logging in — **you fill in nothing**; if it cannot be fetched, login fails
+   loudly and tells you to capture again.
+4. **Generate a runnable MCP project** — multi-host routing, typed parameters, and credentials sent
+   **per endpoint** using the method actually observed (on one server some endpoints use
+   Authorization while others accept only cookies, with nothing for you to configure), `confirm=true`
+   required for writes with a dedicated "tools that change data" list in the README, plus a smoke
+   test and read-only diagnostics.
 5. **Encrypt credentials, restore them after a restart, and re-login automatically on 401** —
-   conditional on an account/password login endpoint having been detected, and on Windows.
+   conditional on an account/password login endpoint having been detected, on the request really
+   being constructible, and on Windows; CAPTCHA / SSO sites get **one-click re-login instead** (a
+   browser window opens and you log in yourself) — the tool never pretends it can renew by itself.
 6. **Iterate incrementally** — capture another round → review the diff → merge → regenerate.
    Endpoints missed in a round are only marked "not seen this round" and are
    **never deleted automatically**.
-7. **Redact at record time** — credential values in JSON and form bodies are erased on the spot,
-   while length and shape are kept so you can still tell whether something is ciphertext.
+7. **Redact at record time** — on the request side, credential material is erased on the spot:
+   a JSON/form field whose *name* looks like a credential (including synonyms such as `pass` / `pin` /
+   `otp` / `api_key`, and form bodies with valueless control segments) has its value erased, and
+   token-bearing headers are masked too — while length and shape are kept, so you can still tell
+   whether something is ciphertext.
 8. **Export a "user-mode distribution package"** — the copy you give a colleague can only call
    tools and read diagnostics; it cannot change the tool set.
 
@@ -136,19 +165,29 @@ A tool set you can **keep using and keep extending**:
 | Cannot | Why |
 |---|---|
 | **Upload files** | File-upload request bodies are neither parsed into parameters nor redacted; attachment contents are not analyzed |
-| **Real-time push** | WebSockets are recorded only as "a connection was established"; frame contents are not captured, and streaming responses get no special handling |
-| **Download files** | Downloads are treated like any other response — not distinguished, not written to disk |
+| **Real-time push** | Both the WebSocket connection and its frame contents **are recorded in the capture** (credentials are redacted the same way), but they **are not** turned into tools; streaming responses still get no special handling |
+| **Download files (automatic / streaming to disk)** | Business file downloads (CSV / PDF / XLSX / ZIP etc.) are recognised and generated as `[FILE]` tools that return the body verbatim (text in `text`, binary in `base64`); writing it to disk is left to the caller — automatic / streaming download to disk is not supported |
 | **GraphQL** | Treated as an ordinary endpoint; query semantics are not expanded |
 | **Binary interfaces** | Responses such as protobuf are not decoded, so no structured fields can be extracted |
-| **Response schemas for large endpoints** | A response over 256 KB is dropped **entirely** (not truncated), so no response structure is available |
-| **Automatic renewal for pure-Cookie / SSO sites** | No automatic re-login for these; expiry requires re-authorizing once |
+| **Response schemas for large endpoints** | A response over 256 KB is dropped **entirely** (not truncated), so no response structure is available. Not a dead end: the Agent can raise the limit (up to 64 MB) and capture again |
+| **Automatic renewal for CAPTCHA / encrypted-password sites** | A constructed request cannot pass the CAPTCHA, so there is **no automatic re-login** — expiry needs one login by you. The generated project brings that itself: `login_interactive()` opens a real browser window for you to log in, and `confirm_login()` saves it once you confirm (**it never decides "you are logged in" on its own**) |
 | **Machines without a desktop** | Capture and login must open a real browser window |
 
 ### Conditional
 
 - **Only the features you actually operated will show up** — endpoints you never clicked are not guessed.
-- **When you log in with an account and password, both are written in plaintext into the session
-  file** — it belongs on your own computer only. Do not commit it, sync it, screenshot it, or share it.
+- **In the session file the cookies are still plaintext, while the account and password are
+  DPAPI-encrypted** (decryptable only by the same Windows user on the same machine; if DPAPI is
+  unavailable, nothing is written rather than plaintext) — the file belongs on your own computer only.
+  Do not commit it, sync it, screenshot it, or share it: copied elsewhere, the cookies stay readable
+  but the password does not.
+- **In the generated tools the credentials are encrypted as well, and they only recognise you on this
+  machine** — move to another computer, or switch to a different Windows user, and the encrypted
+  credentials can no longer be decrypted. The way out is simple: **delete `cred_cache.bin` from the
+  project and log in once more** (the service first asks you once for the account and password in a
+  native window; the status and error messages tell you this same sentence). When you share the
+  generated tools with a colleague, **the credentials do not travel with the package** — the other
+  person just logs in once themselves.
 - **Records are not cleaned up automatically** — the capture log only appends; there is no rotation,
   so long sessions keep growing.
 - **No reverse-engineering or bypassing of CAPTCHAs or login encryption is provided** — when you hit
@@ -174,14 +213,14 @@ You do not need to follow what happens in between — that is the AI's job.
 | Question | Answer |
 |---|---|
 | Do I need to know how to program? | No. It is all conversation plus browser interaction. |
-| Are my account and password safe? | **The session file is plaintext** (a JSON file under the local `auth_states/` directory; when you log in with an account and password, both are written into it too), so it can only stay on your own computer — **do not commit it, sync it, screenshot it, or share it**. During capture, credential values in JSON and form bodies are replaced with `***`, but **URLs and response bodies are not redacted**; in the generated project credentials are stored encrypted (Windows only). Full details in the technical documentation's "Security design" (see [Learn more](#learn-more) at the end). |
+| Are my account and password safe? | **In the session file the cookies are plaintext and the account/password are stored encrypted** (a JSON file under the local `auth_states/` directory; `http_login` encrypts them with Windows DPAPI into a `secrets_enc` field, decryptable only by the same Windows user on the same machine, and if DPAPI is unavailable nothing is written rather than plaintext; a legacy file may stay plaintext until it is read), so it can only stay on your own computer — **do not commit it, sync it, screenshot it, or share it**. During capture, redaction covers the **request side**: a JSON/form field whose name looks like a credential (including synonyms such as `password` / `pass` / `pin` / `otp` / `token` / `api_key`, and form bodies with valueless control segments) has its value replaced with `***`, and `Authorization` / token-bearing headers are masked too; but **URLs and response bodies are not redacted**, and request bodies that are neither JSON nor form-encoded (`multipart`, XML, plain text) are not redacted either. In the generated project credentials are stored encrypted (Windows only). Full details in the technical documentation's "Security design" (see [Learn more](#learn-more) at the end). |
 | Is any data uploaded to the cloud? | No. Everything is recorded in a data directory on your own computer (`~/.webapiextractor`). |
-| Which systems are supported? | Any system you can log into and operate in a browser — including internal systems behind CAPTCHAs, SMS verification, or single sign-on (those go through interactive authorization; **an expired session needs re-authorizing once**, it will not renew automatically). |
-| How complex a feature can it handle? | It depends on what you clicked through in the browser. File upload, WebSocket push, GraphQL, and binary interfaces are out of scope — see "It cannot" above. |
+| Which systems are supported? | Any system you can log into and operate in a browser — including internal systems behind CAPTCHAs, SMS verification, or single sign-on (those go through interactive authorization; **an expired session needs one login by you**, it will not renew automatically — the generated project opens the browser window for that). |
+| How complex a feature can it handle? | It depends on what you clicked through in the browser. File upload, GraphQL, and binary interfaces are out of scope; WebSocket frame contents are recorded in the capture but are not turned into tools — see "It cannot" above. |
 | Can I share the generated tools? | Yes. Hand the distribution package to a colleague; they can call the tools but cannot modify the tool set. |
 | What if the system changes? | Walk through it again and have the AI merge the differences. No redo. |
 | Will the data keep growing? | Yes. The capture log only appends and is never cleaned automatically; long sessions need manual cleanup of the data directory. |
-| Can I use it on non-Windows? | It runs, but credential encryption is unavailable (credentials stay in memory only, so you log in again after a restart), and a desktop environment is required. See the technical documentation's "Platform matrix" for the item-by-item differences. |
+| Can I use it on non-Windows? | **No — not supported.** This project supports Windows only: credential encryption relies on Windows DPAPI, and capture and interactive login must open a real desktop browser window. macOS / Linux are neither supported nor tested. See the technical documentation's "Platform matrix". |
 | Is this a Skill or an MCP server? | You do not need to distinguish. Underneath it is an MCP server; on top it is a skill your agent can invoke — import the skill and you are done. |
 
 ---
@@ -198,7 +237,7 @@ semantics** all live in the technical documentation:
 |---|---|
 | What the 21 tools are and what arguments each takes | "Tool list", "Tool argument quick reference" |
 | Which systems / features are out of scope | "Capability boundaries (what it cannot do)" |
-| How far Windows, macOS, and Linux are each supported | "Platform matrix" |
+| How far Windows is supported, and why macOS / Linux are not | "Platform matrix" |
 | Exactly how credentials and data are stored, and how far redaction goes | "Security design" |
 | What to do when a session expires, and when automatic re-login applies | "Renewal semantics" |
 | Where data lives and whether it keeps growing | "Data directory and environment variables" |
@@ -213,12 +252,29 @@ semantics** all live in the technical documentation:
 
 ## License
 
-The scope and restrictions of use for this project are governed by [LICENSE](LICENSE):
+This project ships as **two editions with different terms** — **the `LICENSE` inside the package you
+actually received is the one that applies**:
 
-- Personal learning, testing, and non-commercial use are permitted
-- Redistributing modifications requires retaining the original source attribution
-- Derivative work based on this project must be released as open source
-- Direct commercial use is not permitted
+| Edition | Where it comes from | Terms |
+|---|---|---|
+| Open-source | this repository, GitHub Releases skill package | the repository's root `LICENSE` (custom, **non-commercial**): personal learning, testing and non-commercial use; redistribution of modifications must retain source attribution; derivative work must be open source; no direct commercial use |
+| Store | the package distributed through a skill store | the `LICENSE` inside that package (`LICENSE-STORE`, a custom **store-distribution license**): grants store listing and end-user use (including internal business purposes); attribution and disclaimers retained; no resale, no redistribution outside that store, no sublicensing, no distributing modified versions (private modification is fine); it does **not** waive the open-source edition's non-commercial restriction |
+
+> The two packages **do not contain the same things**: the **store edition** trims the development
+> artifacts for store distribution — no test suite (`tests/`), no test dependencies
+> (`requirements-dev.txt`), no packaging metadata (`pyproject.toml`), and no `.vscode/`, `bootstrap.sh`
+> or `install-agent.ps1` — keeping only what is needed at runtime; its license is the store one
+> (`LICENSE-STORE`, named `LICENSE` inside the package). The **open-source edition** keeps the full
+> development artifacts (including `tests/`), and carries the repository's non-commercial license.
+> **`DISCLAIMER.md` is bundled in both editions** (it only covers scope of use and credential handling,
+> and states no license terms). In short: **to run the tests locally, use the open-source edition** —
+> the store package has neither the test suite nor the test dependencies.
+
+> Both licenses are **self-authored usage-boundary statements and have not been reviewed by a lawyer** —
+> obtain legal review before relying on either as the sole legal basis for a specific deployment.
+> Whichever edition you have, please also read [DISCLAIMER.md](DISCLAIMER.md) (scope of use, credential
+> handling warning, no warranty, limitation of liability) — both editions' packages bundle it, and this
+> repository's root carries the same file.
 
 ## Disclaimer (scope of use)
 

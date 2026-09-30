@@ -8,6 +8,10 @@
 - zip 曾把仓库根当成默认输出并误提交进仓库（.gitignore 里至今留着这条注释）；
 - 现在有 .ps1 与 .py 两份清单，只改一边就会让「用哪份打」决定包里有什么。
 
+后来又多了**商店版**（`--store` / `-Store`）：它在开源版清单上去掉开发/不支持项、
+附上商店授权（`LICENSE-STORE`，包内改名为 `LICENSE`）与 `DISCLAIMER.md`。商店包
+必须只带一份授权文件、且必须是商店版那份 —— 带错就等于把非商业条款发给商店用户。
+
 因此这里只断言**清单关系**（两份一致、必含项在、运行产物不在），不断言 zip 字节，
 也不锁打印文案 —— 改实现方式不该让测试变红。
 """
@@ -36,10 +40,18 @@ def _load_module():
 package_agent = _load_module()
 
 
-def _ps1_include() -> list[str]:
-    block = re.search(r"\$include\s*=\s*@\((.*?)\)", PS1.read_text(encoding="utf-8"), re.S)
-    assert block, "package-agent.ps1 里找不到 $include 清单（改结构要同步改这里）"
+def _ps1_array(var: str) -> list[str]:
+    block = re.search(rf"\${var}\s*=\s*@\((.*?)\)", PS1.read_text(encoding="utf-8"), re.S)
+    assert block, f"package-agent.ps1 里找不到 ${var} 清单（改结构要同步改这里）"
     return re.findall(r'"([^"]+)"', block.group(1))
+
+
+def _ps1_include() -> list[str]:
+    return _ps1_array("include")
+
+
+def _ps1_store_include() -> list[str]:
+    return _ps1_array("storeInclude")
 
 
 @pytest.fixture()
@@ -47,6 +59,15 @@ def built(tmp_path):
     """打一次真包，返回 (zip 路径, 条目名列表)。"""
     dest = tmp_path / "nested" / "pkg.zip"   # 嵌套目录顺带验证 dest.parent 会自动建
     names = package_agent.build_zip(dest)
+    return dest, names
+
+
+@pytest.fixture()
+def built_store(tmp_path):
+    """打一次商店版真包，返回 (zip 路径, 条目名列表)。"""
+    dest = tmp_path / "nested" / "store.zip"
+    names = package_agent.build_zip(dest, manifest=package_agent.STORE_INCLUDE,
+                                    rename=package_agent.STORE_RENAME)
     return dest, names
 
 
@@ -112,6 +133,86 @@ class TestRuntimeArtifactsExcluded:
         names = package_agent.build_zip(tmp_path / "out.zip", root=tmp_path)
 
         assert names == ["SKILL.md", "pkg/keep.py"]
+
+
+class TestStoreManifestMatches:
+    """商店版的两份清单同样必须一致 —— 否则「用哪份打」决定商店包里有什么。"""
+
+    def test_py_and_ps1_store_include_match(self):
+        assert list(package_agent.STORE_INCLUDE) == _ps1_store_include()
+
+    def test_store_manifest_is_default_minus_dev_plus_store_extras(self):
+        """商店清单必须是默认清单的机械变换，而不是另抄一份（防止两处各改各的）。"""
+        expected = [item for item in package_agent.INCLUDE
+                    if item not in package_agent.STORE_EXCLUDE] + list(package_agent.STORE_ADD)
+        assert list(package_agent.STORE_INCLUDE) == expected
+
+    def test_ps1_store_manifest_matches_py_derivation(self):
+        """把 .ps1 的商店清单与「.py 默认清单 − 排除 + 附加」核对，防 .ps1 单独漂移。"""
+        expected = [item for item in _ps1_include()
+                    if item not in package_agent.STORE_EXCLUDE] + list(package_agent.STORE_ADD)
+        assert _ps1_store_include() == expected
+
+    def test_store_entries_sorted(self, built_store):
+        _, names = built_store
+        assert names == sorted(names)
+
+
+class TestStorePackage:
+    """商店包：自足、只带商店授权、不含开发/不支持项。"""
+
+    @pytest.mark.parametrize("required", [
+        "SKILL.md",
+        "DISCLAIMER.md",
+        "LICENSE",                   # 由 LICENSE-STORE 改名而来
+        "bootstrap.py",
+        "bootstrap.ps1",             # 平台决定只支持 Windows，runbook 要引用它
+        "start_server.py",
+        "mcp_call.py",
+        "run_http.py",
+        "webapi_extractor/server.py",
+        "runbook/00-environment.md",
+        "requirements.txt",
+    ])
+    def test_required_member_present(self, built_store, required):
+        _, names = built_store
+        assert required in names
+
+    def test_skill_md_is_at_package_root(self, built_store):
+        _, names = built_store
+        assert "SKILL.md" in names
+        assert not any(n.startswith("web-api-extractor/") for n in names)
+
+    def test_carries_store_license_not_repo_license(self, built_store):
+        """商店包只能带一份授权，且必须是商店版那份（不是仓库的非商业 LICENSE）。"""
+        dest, names = built_store
+        assert "LICENSE-STORE" not in names, "LICENSE-STORE 必须以 LICENSE 之名落包"
+        with zipfile.ZipFile(dest) as zf:
+            inside = zf.read("LICENSE")
+        assert inside == (ROOT / "LICENSE-STORE").read_bytes()
+        assert inside != (ROOT / "LICENSE").read_bytes()
+
+    @pytest.mark.parametrize("banned", [
+        "bootstrap.sh", "package-agent.py", "package-agent.ps1",
+        "install-agent.ps1", "requirements-dev.txt", "pyproject.toml", ".gitattributes",
+    ])
+    def test_dev_or_unsupported_entries_absent(self, built_store, banned):
+        _, names = built_store
+        assert banned not in names
+
+    def test_no_tests_or_vscode_entries(self, built_store):
+        _, names = built_store
+        assert not any(n == "tests" or n.startswith("tests/") for n in names)
+        assert not any(n == ".vscode" or n.startswith(".vscode/") for n in names)
+
+    def test_runtime_artifacts_excluded(self, built_store):
+        _, names = built_store
+        for name in names:
+            parts = name.split("/")
+            assert not any(p in {"__pycache__", ".venv", ".git",
+                                 ".pytest_cache", ".mypy_cache"} for p in parts), name
+            assert not any(p.endswith(".egg-info") for p in parts), name
+            assert Path(name).suffix not in {".pyc", ".pyo"}, name
 
 
 class TestFailureModes:

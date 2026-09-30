@@ -1,5 +1,5 @@
+# 运行时依赖：技能真正需要的东西。测试运行器不在这里（见 requirements-dev.txt），
+# 否则每个终端用户都会被装上一套 pytest。
 fastmcp>=2.3,<5
 httpx>=0.27
 playwright>=1.45,<2
-pytest>=8.0
-pytest-asyncio>=0.23

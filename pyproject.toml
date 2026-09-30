@@ -31,6 +31,15 @@ classifiers = [
     "Topic :: Software Development :: Code Generators",
 ]
 
+# 测试依赖与运行时依赖分离：`pip install -e .`（或 bootstrap.py 的默认路径）不装 pytest，
+# 只有 `pip install -e ".[test]"` 或 `bootstrap.py --with-tests` 才会。
+# 与 requirements-dev.txt 保持同一组版本约束。
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
 [project.scripts]
 web-api-extractor = "webapi_extractor.server:main"
 

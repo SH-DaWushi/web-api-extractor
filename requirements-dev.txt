@@ -1,0 +1,7 @@
+# 测试依赖（可选）：跑 tests/ 才需要。
+#   python bootstrap.py --with-tests      # 引导时一并装进独立 venv
+#   pip install -r requirements-dev.txt   # 或手工装进任意环境
+# 也等价于 pyproject.toml 的 [project.optional-dependencies].test（pip install -e ".[test]"）。
+-r requirements.txt
+pytest>=8.0
+pytest-asyncio>=0.23

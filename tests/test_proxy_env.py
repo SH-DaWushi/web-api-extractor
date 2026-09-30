@@ -143,3 +143,88 @@ class TestTemplateInlined:
         exec(compile(_extract_sanitize_src(), "<tpl>", "exec"), ns)
         assert "[" not in os.environ["NO_PROXY"]
         httpx.Client(timeout=5).close()
+
+
+class TestRuntimeEnvHardening:
+    """宿主环境相关的一次性修补：重新生成 / 重装后不得丢失。
+
+    这里的两条都是「此前就地打过补丁、但从未上游到仓库」的东西 —— 我们从仓库重新打包
+    后它们丢过一次，症状分别是：
+
+      * ``run_http.py`` 在导入 fastmcp 之后才清洗 NO_PROXY → 服务启动即崩、端口从未监听，
+        调用方只看到 ConnectError，报错方向完全指向「服务/网络没起来」；
+      * 三处 Playwright 上下文没放开自签名证书 → 内网设备的探测 / 登录 / 抓包全线失败，
+        而 probe 把它降级成「page load timeout」，同样不指向真因。
+
+    因此把它们钉成断言（顺序 + 参数本身），而不是靠人记得。
+    """
+
+    def test_run_http_sanitizes_no_proxy_before_importing_fastmcp(self):
+        from pathlib import Path as _Path
+
+        src = (_Path(__file__).resolve().parents[1] / "run_http.py").read_text(encoding="utf-8")
+        assert "sanitize_no_proxy()" in src, "run_http.py 没有调用 sanitize_no_proxy()"
+        sanitize_at = src.find("sanitize_no_proxy()")
+        import_at = src.find("from fastmcp import FastMCP")
+        assert import_at != -1, "run_http.py 里找不到 fastmcp 的导入，测试本身失效"
+        assert sanitize_at < import_at, (
+            "sanitize_no_proxy() 必须在 `from fastmcp import FastMCP` **之前**调用："
+            "FastMCP 的启动横幅会用 trust_env=True 的客户端打 PyPI，而 NO_PROXY 里的 "
+            "[::1] 让 httpx 在构造 URLPattern 时就抛 InvalidURL，服务崩在 mcp.run() 内部、"
+            "端口从未监听")
+
+    def test_headful_playwright_contexts_follow_the_window_size(self):
+        """headful 场景必须 no_viewport=True，否则拖窗口时页面不重排。
+
+        Playwright 默认给固定 1280x720 的 viewport，窗口变化不会传导给页面 ——
+        表现为「调整窗口大小，布局纹丝不动」；响应式站点还会因此渲染成另一种布局，
+        连带影响抓到的内容。probe 是 headless、要的是确定性，故不在此列。
+        """
+        from pathlib import Path as _Path
+
+        root = _Path(__file__).resolve().parents[1]
+        for rel in ("webapi_extractor/capture.py", "webapi_extractor/auth.py"):
+            text = (root / rel).read_text(encoding="utf-8")
+            assert "no_viewport=True" in text, (
+                f"{rel} 未设 no_viewport=True：拖动窗口时页面布局不会随窗口调整")
+
+    def test_playwright_contexts_tolerate_self_signed_certs(self):
+        from pathlib import Path as _Path
+
+        root = _Path(__file__).resolve().parents[1]
+        # 按「文件里出现该参数」断言，而不是钉住整行文本 —— 参数顺序或换行变化
+        # 不该让守卫变红（钉字符串曾经在加 no_viewport 时误伤过一次）。
+        for rel in ("webapi_extractor/probe.py",
+                    "webapi_extractor/auth.py",
+                    "webapi_extractor/capture.py"):
+            text = (root / rel).read_text(encoding="utf-8")
+            assert "ignore_https_errors=True" in text, (
+                f"{rel} 未放开自签名证书校验：内网设备（自签名是常态）上探测/登录/抓包"
+                f"会全线失败，且报错表现为「页面超时」而非证书问题")
+
+
+def test_generated_server_sanitizes_proxy_before_importing_fastmcp():
+    """生成的服务自己也是受害者：模板里清洗必须在 fastmcp 导入之前。
+
+    只修 run_http.py 是不够的 —— 用户在 MCP 宿主里跑的正是**生成物**，它带着同一份
+    漏洞。这条断言直接检查生成出来的 server.py 里两者的先后顺序。
+    """
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+    from webapi_extractor.generator import render_server
+
+    registry = {"site_name": "portal", "registry_version": 1,
+                "hosts": {"oa.example.com": {"scheme": None, "cookie_names": []}},
+                "endpoints": [{"tool_name": "get_x", "method": "GET", "host": "oa.example.com",
+                               "path": "/api/x", "path_params": [], "query_params": {},
+                               "sample_count": 1, "status": "active"}],
+                "auth_login": None}
+    src = render_server(registry)["server.py"]
+    clean_at = src.find("_sanitize_no_proxy()")
+    import_at = src.find("from fastmcp import FastMCP")
+    assert clean_at != -1, "生成的 server.py 没有调 _sanitize_no_proxy()"
+    assert import_at != -1, "生成的 server.py 里找不到 fastmcp 导入"
+    assert clean_at < import_at, (
+        "生成的 server.py 必须先清洗 NO_PROXY 再导入 fastmcp，否则在注入 [::1] 的宿主里"
+        "启动即崩、端口从未监听")

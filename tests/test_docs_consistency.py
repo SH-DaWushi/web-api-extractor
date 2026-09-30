@@ -37,6 +37,16 @@ SERVER_SRC = (ROOT / "webapi_extractor" / "server.py").read_text(encoding="utf-8
 PROBE_SRC = (ROOT / "webapi_extractor" / "probe.py").read_text(encoding="utf-8")
 
 
+def _auth_state_windows(text: str, span: int = 250) -> list[str]:
+    """取 ``text`` 中每处 ``auth_states`` 前后 ``span`` 个字符的上下文。
+
+    README 里只有「讲本工具自身登录态文件」的那一段会提到 ``auth_states``；把断言限制在
+    这道窗口内，才能防止别处「生成的子项目加密」那种说法替它蒙混过关。
+    """
+    return [text[max(0, m.start() - span): m.end() + span]
+            for m in re.finditer(r"auth_states", text)]
+
+
 class TestInstallInstructions:
     """安装路径必须真实存在。"""
 
@@ -121,10 +131,22 @@ class TestSecurityClaims:
         for phrase in self.REFUTED:
             assert phrase not in README, f"已核实为假的原话不得再出现：{phrase}"
 
-    def test_admits_plaintext_auth_state(self):
-        """`http_login` 会把账号密码明文写进 auth_states，README 必须承认。"""
+    def test_admits_auth_state_protection_scope(self):
+        """登录态文件必须写清「Cookie 明文、账号密码加密」并给出不可提交的警告。
+
+        能力已变更：``http_login`` 现在把账号密码用 DPAPI 加密后写进 ``secrets_enc``（仅同一
+        Windows 用户可解），不再写明文；Cookie 受 Playwright ``storage_state`` 契约所限仍是明文。
+        断言落在**提到 ``auth_states`` 的那段上下文**里（而不是整个 README）：别处讲「生成的
+        子项目加密」不能满足它 —— 只删掉「Cookie 明文」或只删掉「账号密码加密」都必须变红。
+        """
         assert "auth_states" in README
-        assert "明文" in README
+        assert re.search(r"不要提交|禁止提交|不得提交", README), \
+            "README 必须警告登录态文件不得提交/同步"
+        windows = _auth_state_windows(README)
+        assert any(re.search(r"Cookie[\s\S]{0,40}明文", w) for w in windows), \
+            "README 必须如实说明登录态文件里的 Cookie 是明文"
+        assert any(re.search(r"(账号|密码)[\s\S]{0,40}加密", w) for w in windows), \
+            "README 必须说明登录态文件里的账号密码是加密保存的（不再写明文）"
 
     def test_states_redaction_scope(self):
         """URL 与响应体都不脱敏，必须写明。"""
@@ -356,10 +378,18 @@ class TestEnglishDocsMirrorChinese:
             assert token not in README_EN, \
                 f"英文 README 不应出现运维/开发命令：{token}（应放 docs/reference.en.md）"
 
-    def test_admits_plaintext_auth_state(self):
-        """中文版承认登录态是明文、且 URL 与响应体不脱敏；英文版必须同样承认。"""
+    def test_admits_auth_state_protection_scope(self):
+        """中文版写清「Cookie 明文、账号密码加密」，英文版必须同样写清（否则就是漂移）。"""
         assert "auth_states" in README_EN
-        assert "plaintext" in README_EN
+        assert re.search(r"[Dd]o not commit|never commit", README_EN), \
+            "英文 README 必须警告登录态文件不得提交/同步"
+        windows = _auth_state_windows(README_EN)
+        assert any(re.search(r"cookies?[\s\S]{0,40}plaintext", w, re.IGNORECASE)
+                   for w in windows), \
+            "英文 README 必须如实说明登录态文件里的 Cookie 是明文"
+        assert any(re.search(r"(account|password)[\s\S]{0,60}encrypt", w, re.IGNORECASE)
+                   for w in windows), \
+            "英文 README 必须说明登录态文件里的账号密码是加密保存的（不再写明文）"
         assert re.search(r"URLs?[^.]{0,40}not redacted", README_EN)
 
     def test_refuted_claims_absent(self):
@@ -454,3 +484,25 @@ class TestEnglishDiagramMatchesChinese:
         assert cn and en, f"两版都必须能解析出步数：中文 {cn} 英文 {en}"
         assert int(cn["传统做法"]) == en["Traditional"], f"传统步数 中{cn} 英{en}"
         assert int(cn["用本技能"]) == en["This skill"], f"本技能步数 中{cn} 英{en}"
+
+
+class TestEncryptionClaimIsScoped:
+    """「凭据/Token 走系统级加密存储」这类说法必须自带适用范围。
+
+    该说法对**生成的子项目**成立（DPAPI、仅 Windows、且需识别到账号密码登录接口）；
+    本工具自身的登录态文件（``auth_states/*.json``）也把账号密码 DPAPI 加密，但其中的 Cookie
+    仍是明文。一句无范围的「加密存储」会让读者以为「整份文件都加密了」，与那条明文 Cookie
+    声明直接相反，而读者先看的就是对比表 —— 因此这里断言：凡是出现该类说法的那一行，必须同时
+    写明适用范围。
+    """
+
+    def test_encrypted_storage_claim_must_be_scoped(self):
+        for label, text in (("README", README), ("reference", REFERENCE),
+                            ("README.en", README_EN), ("reference.en", REFERENCE_EN)):
+            for line in text.splitlines():
+                low = line.lower()
+                if "加密存储" not in line and "encrypted storage" not in low:
+                    continue
+                scoped = ("DPAPI" in line or "生成的子项目" in line
+                          or "generated project" in low)
+                assert scoped, f"{label} 中出现了无适用范围的加密存储说法：{line.strip()}"

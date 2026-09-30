@@ -12,9 +12,22 @@ import argparse
 import sys
 from pathlib import Path
 
-from fastmcp import FastMCP
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# ⚠️ 必须在导入 fastmcp **之前**清洗 NO_PROXY。FastMCP 的启动横幅会调
+# check_for_newer_version()，用 trust_env=True 的 httpx 客户端去打 PyPI；而宿主
+# 注入的 NO_PROXY 里带方括号 IPv6（`[::1]`）会让 httpx 在**构造 URLPattern 时**
+# 就抛 InvalidURL。后果：服务在 mcp.run() 内部崩溃、端口从未监听，调用方只看到
+# httpx.ConnectError（目标计算机积极拒绝）—— 报错方向完全指向「服务/网络没起来」，
+# 只有 server.log 末尾那行 InvalidURL 才指得出真因。
+# webapi_extractor/proxy_env.py 早已实现并写清了这件事，mcp_call.py 也用
+# trust_env=False 规避过 —— 唯独服务端启动路径漏调，属于「修了一半」。
+# 这段顺序由 tests/test_proxy_env.py 的守卫看着，别再被重新生成冲掉。
+from webapi_extractor.proxy_env import sanitize_no_proxy  # noqa: E402
+
+sanitize_no_proxy()
+
+from fastmcp import FastMCP  # noqa: E402
 
 from webapi_extractor.server import mcp  # noqa: E402
 

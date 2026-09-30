@@ -25,6 +25,8 @@ class TestOdataBoundFunction:
         # 抓到的两个绑定函数形态
         ("/api/data/v9.0/systemusers(000000aa)/Microsoft.Dynamics.CRM.RetrievePrincipalAccess", True),
         ("/api/data/v9.0/activitypointers/Microsoft.Dynamics.CRM.RetrieveTimelineWallRecords", True),
+        # name(guid) 调用形态：记录键调用 + 函数名（没有命名空间前缀也是绑定函数）
+        ("/api/data/v9.0/systemusers(00000000-0000-0000-0000-000000000000)/RetrievePrincipalAccess", True),
         # 普通集合端点
         ("/api/data/v9.0/annotations", False),
         ("/api/data/v9.0/cr_sampleitems", False),
@@ -35,6 +37,18 @@ class TestOdataBoundFunction:
         ("/api/data/v9.0/dashboard.aspx", False),
         ("/WebServices/SampleService.asmx/Report", False),
         ("/res/x.js", False),
+        # F5：带扩展名的**导出类业务端点**不是绑定函数。此前「末段含点号就算」把它们
+        # 标成 not_independently_callable，project.session_to_registry_entries 随即
+        # 静默丢弃——真业务端点凭空消失，摘要里也没有任何交代。
+        ("/api/report.csv", False),
+        ("/api/export/report.pdf", False),
+        ("/api/files/readme.txt", False),
+        ("/api/export/audit.log", False),
+        ("/api/export/report.xlsx", False),
+        ("/api/download/archive.zip", False),
+        ("/api/print/notice.docx", False),
+        # 短键的普通业务路径（不是 GUID）同样不是绑定函数
+        ("/api/orders(123)/items", False),
     ])
     def test_detection(self, path, expected):
         assert is_odata_bound_function(path) is expected

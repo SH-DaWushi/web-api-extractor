@@ -24,12 +24,20 @@ from __future__ import annotations
 import asyncio
 import ast
 import inspect
+import json
 import textwrap
 from pathlib import Path
 
 import pytest
 
-from webapi_extractor.auth import LoginManager, LoginSession
+import webapi_extractor.auth as auth_module
+from webapi_extractor import win_crypto
+from webapi_extractor.auth import (
+    LoginManager,
+    LoginSession,
+    http_login,
+    read_auth_state_secrets,
+)
 from webapi_extractor.capture import CaptureSession
 
 URL = "https://oa.example.com/login/login.jsp"
@@ -507,3 +515,178 @@ class TestDialogIsShared:
 
         assert result == "done"
         assert len(ticks) == 3, "阻塞期间事件循环被卡住了"
+
+
+# --------------------------------------------------------------------------- #
+# 6. 凭据落盘：DPAPI 密文（secrets_enc），不再写明文 password
+# --------------------------------------------------------------------------- #
+LOGIN_URL = "https://oa.example.com/api/login"
+ACCOUNT = "alice"
+PASSWORD = "Sup3r-Secret-Pw!"
+
+
+class _FakeCookie:
+    def __init__(self, name, value):
+        self.name, self.value = name, value
+        self.domain, self.path = HOST, "/"
+        self.secure, self.expires = True, -1
+
+
+class _FakeResponse:
+    """`http_login` 只用到 status_code / url / text / json()。"""
+
+    def __init__(self):
+        self.status_code = 200
+        self.url = LOGIN_URL
+        self.text = ""  # 没有表单 → 不走表单分支
+
+    def json(self):
+        raise ValueError("not json")  # 与「响应不是 JSON」的真实情形一致
+
+
+class _FakeHttpxClient:
+    def __init__(self, *args, **kwargs):
+        self.cookies = type("_Jar", (), {"jar": [_FakeCookie("loginToken", "tok-1")]})()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+    async def get(self, *args, **kwargs):
+        return _FakeResponse()
+
+    async def post(self, *args, **kwargs):
+        return _FakeResponse()
+
+
+@pytest.fixture
+def login_env(monkeypatch, tmp_path):
+    """把网络换成假客户端，并隔离模块级的内存凭据表（避免用例互相污染）。"""
+    monkeypatch.setattr(auth_module.httpx, "AsyncClient", _FakeHttpxClient)
+    monkeypatch.setattr(auth_module, "_MEMORY_SECRETS", {})
+    state_dir = tmp_path / "auth_states"
+    return state_dir
+
+
+def _run_login(state_dir) -> tuple[dict, Path]:
+    result = asyncio.run(http_login(LOGIN_URL, ACCOUNT, PASSWORD, state_dir))
+    return result, Path(result["auth_state_path"])
+
+
+def _legacy_state_file(state_dir: Path) -> Path:
+    """旧版本写下的登录态：账号密码在明文 `secrets` 对象里。"""
+    path = state_dir / "oa_example_com.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "site_key": "oa_example_com",
+        "created_at": "2026-09-29T00:00:00+00:00",
+        "secrets": {"username": ACCOUNT, "password": PASSWORD},
+        "cookies": [{"name": "loginToken", "value": "tok-1", "domain": HOST, "path": "/"}],
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+requires_dpapi = pytest.mark.skipif(not win_crypto.available(), reason="本机 DPAPI 不可用，跳过加密落盘用例")
+
+
+class TestCredentialsAreEncryptedAtRest:
+    """`http_login` 存下的账号密码必须是 DPAPI 密文，且能读回来。"""
+
+    @requires_dpapi
+    def test_password_never_appears_in_the_state_file(self, login_env):
+        result, path = _run_login(login_env)
+        raw = path.read_bytes()
+
+        assert PASSWORD.encode("utf-8") not in raw, "密码明文落盘了"
+        assert b'"username": "' + ACCOUNT.encode("utf-8") + b'"' not in raw, "账号仍是明文"
+        assert b'"secrets"' not in raw, "旧的明文 secrets 字段仍在"
+        assert b'"secrets_enc"' in raw, "应有 DPAPI 密文字段"
+        assert result["secrets_persisted"] is True
+
+    def test_storage_state_contract_is_unchanged(self, login_env):
+        """同一个文件还要喂给 Playwright 当 storage_state，结构不能变。"""
+        _, path = _run_login(login_env)
+        state = json.loads(path.read_text(encoding="utf-8"))
+
+        assert state["cookies"][0]["name"] == "loginToken"
+        assert state["cookies"][0]["value"] == "tok-1"
+        assert state["cookies_raw"] == {"loginToken": "tok-1"}
+        assert state["site_key"] == path.stem, "_site_key 命名不变"
+
+    @requires_dpapi
+    def test_encrypted_secrets_round_trip(self, login_env):
+        """加密只是手段：读回来必须与原始凭据逐字相同（本机可解）。"""
+        _, path = _run_login(login_env)
+
+        assert read_auth_state_secrets(path) == {"username": ACCOUNT, "password": PASSWORD}
+
+    def test_legacy_plaintext_secrets_are_still_readable(self, login_env):
+        """旧文件（明文 secrets）必须继续能读——升级不该让用户丢失凭据。"""
+        path = _legacy_state_file(login_env)
+
+        assert read_auth_state_secrets(path) == {"username": ACCOUNT, "password": PASSWORD}
+
+    @requires_dpapi
+    def test_legacy_plaintext_is_migrated_on_read(self, login_env):
+        """读到旧文件时顺手迁移：密文落盘、明文从磁盘上消失，其余字段不动。"""
+        path = _legacy_state_file(login_env)
+        assert read_auth_state_secrets(path) == {"username": ACCOUNT, "password": PASSWORD}
+
+        raw = path.read_bytes()
+        assert PASSWORD.encode("utf-8") not in raw, "迁移后仍留有明文密码"
+        assert b'"secrets":' not in raw, "迁移后仍留有明文 secrets 字段"
+        state = json.loads(raw.decode("utf-8"))
+        assert state["cookies"][0]["value"] == "tok-1", "迁移不得丢 Cookie"
+        assert "secrets_enc" in state
+        # 二次读走密文路径，仍然对得上
+        assert read_auth_state_secrets(path) == {"username": ACCOUNT, "password": PASSWORD}
+
+    def test_missing_or_broken_file_reads_as_none(self, login_env):
+        """读不到 ≠ 崩掉：缺文件、坏 JSON 都只返回 None。"""
+        assert read_auth_state_secrets(login_env / "nope.json") is None
+        broken = login_env / "oa_example_com.json"
+        broken.parent.mkdir(parents=True, exist_ok=True)
+        broken.write_text("{not json", encoding="utf-8")
+        assert read_auth_state_secrets(broken) is None
+
+    def test_dpapi_unavailable_does_not_write_plaintext(self, login_env, monkeypatch):
+        """DPAPI 不可用：宁可不保存，也不明文落盘；且必须如实告知。"""
+        monkeypatch.setattr(win_crypto, "available", lambda: False)
+
+        result, path = _run_login(login_env)
+        raw = path.read_bytes()
+
+        assert PASSWORD.encode("utf-8") not in raw, "降级路径写出了明文密码"
+        assert b'"secrets' not in raw, "不该有 secrets / secrets_enc 任何字段"
+        assert result["success"] is True, "Cookie 已拿到，登录本身不该被判失败"
+        assert result["secrets_persisted"] is False
+        assert result["warning"] == "secrets_not_persisted", "必须把「没保存」明确回报给调用方"
+        assert "message" in result
+        # 能力保留在内存里（本次会话仍可用），只是没落盘
+        assert read_auth_state_secrets(path) == {"username": ACCOUNT, "password": PASSWORD}
+
+    def test_encryption_failure_does_not_write_plaintext(self, login_env, monkeypatch):
+        """加密报错（而非平台不可用）：同样不得明文落盘。"""
+        monkeypatch.setattr(win_crypto, "available", lambda: True)
+
+        def _boom(_data):
+            raise win_crypto.DPAPIError("模拟加密失败")
+
+        monkeypatch.setattr(win_crypto, "protect", _boom)
+
+        result, path = _run_login(login_env)
+        raw = path.read_bytes()
+
+        assert PASSWORD.encode("utf-8") not in raw
+        assert b'"secrets' not in raw
+        assert result["secrets_persisted"] is False
+        assert result["warning"] == "secrets_not_persisted"
+        assert "DPAPIError" in result["message"], "原因要写清楚，便于排查"
+
+    def test_http_login_source_has_no_plaintext_secrets_write(self):
+        """结构性守卫：`http_login` 里不得再出现写入明文凭据的赋值。"""
+        source = inspect.getsource(http_login) + inspect.getsource(auth_module._store_secrets)
+        assert '"secrets": {"username": username, "password": password}' not in source
+        assert auth_module._SECRETS_ENC_FIELD in source
