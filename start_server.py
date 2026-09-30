@@ -47,6 +47,12 @@ CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
 IS_WIN = sys.platform == "win32"
 
+# tasklist / netstat / powershell / wmic / taskkill / lsof / ss 全是**控制台**程序。
+# 本脚本常由宿主静默启动（自己没有控制台），不指定这个标志时 Windows 会为**每一个**
+# 这样的子进程新建一个黑色窗口 —— 用户看到的「一操作就闪黑框」就是它们。
+# 非 Windows 必须传 0：POSIX 上 subprocess 不接受非零 creationflags。
+CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WIN else 0
+
 # S2：停止服务后「端口真的空出来了」的有界等待与轮询间隔（秒）。
 _PORT_FREE_TIMEOUT = 10.0
 _PORT_FREE_INTERVAL = 0.5
@@ -105,7 +111,8 @@ def pid_alive(pid: int) -> bool:
     if IS_WIN:
         try:
             out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
-                                 capture_output=True, text=True, timeout=15).stdout
+                                 capture_output=True, text=True, timeout=15,
+                                 creationflags=CREATE_NO_WINDOW).stdout
             return str(pid) in out
         except (OSError, subprocess.SubprocessError):
             return False
@@ -119,7 +126,8 @@ def pid_alive(pid: int) -> bool:
 def _run_capture(argv: list[str]) -> str | None:
     """跑一条只读探测命令并取回 stdout；任何失败都返回 None（永不抛异常）。"""
     try:
-        completed = subprocess.run(argv, capture_output=True, text=True, timeout=15)
+        completed = subprocess.run(argv, capture_output=True, text=True, timeout=15,
+                                   creationflags=CREATE_NO_WINDOW)
     except (OSError, subprocess.SubprocessError):
         return None
     return completed.stdout or None
@@ -251,7 +259,8 @@ def _kill_tree(pid: int, *, force: bool = False) -> None:
     try:
         if IS_WIN:
             subprocess.call(["taskkill", "/F", "/T", "/PID", str(pid)],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            creationflags=CREATE_NO_WINDOW)
         else:
             _signal_process_group(pid, signal.SIGKILL if force else signal.SIGTERM)
     except OSError:

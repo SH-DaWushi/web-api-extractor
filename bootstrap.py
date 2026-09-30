@@ -28,6 +28,12 @@ ROOT = Path(__file__).resolve().parent
 # 历史版本把 venv 建在技能目录内；检到就复用，避免同一台机器上出现两份环境。
 LEGACY_VENV = ROOT / ".venv"
 
+# 引导常由 Agent 代跑：那时父进程没有控制台，而 python -m pip / playwright 都是
+# **控制台**程序，Windows 会为每一个子进程新建一个黑色窗口。加这个标志就不建。
+# 输出照旧：子进程继承父进程的 std 句柄，pip 的进度仍然打在原处。
+# 非 Windows 必须传 0 —— POSIX 上 subprocess 不接受非零 creationflags。
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+
 
 def _data_root() -> Path:
     """数据目录：优先复用 ``webapi_extractor.config`` 的权威定义。
@@ -73,26 +79,29 @@ def main() -> int:
     print(f"         解释器：{venv_py}")
     if not venv_py.exists():
         venv_dir.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.check_call([sys.executable, "-m", "venv", str(venv_dir)])
+        subprocess.check_call([sys.executable, "-m", "venv", str(venv_dir)],
+                              creationflags=NO_WINDOW)
     else:
         print("         已存在，跳过创建")
 
     print(">> [2/4] 安装运行依赖 (requirements.txt)")
     subprocess.check_call([str(venv_py), "-m", "pip", "install", "--disable-pip-version-check",
-                           "--upgrade", "pip"])
+                           "--upgrade", "pip"], creationflags=NO_WINDOW)
     subprocess.check_call([str(venv_py), "-m", "pip", "install", "--disable-pip-version-check",
-                           "-r", str(ROOT / "requirements.txt")])
+                           "-r", str(ROOT / "requirements.txt")], creationflags=NO_WINDOW)
     if with_tests:
         print(">> 追加安装测试依赖 (requirements-dev.txt)")
         subprocess.check_call([str(venv_py), "-m", "pip", "install", "--disable-pip-version-check",
-                               "-r", str(ROOT / "requirements-dev.txt")])
+                               "-r", str(ROOT / "requirements-dev.txt")], creationflags=NO_WINDOW)
 
     print(">> [3/4] 安装 Playwright Chromium 内核（较大，请稍候）")
-    subprocess.check_call([str(venv_py), "-m", "playwright", "install", "chromium"])
+    subprocess.check_call([str(venv_py), "-m", "playwright", "install", "chromium"],
+                          creationflags=NO_WINDOW)
 
     print(">> [4/4] 运行环境自检 doctor")
     rc = subprocess.call([str(venv_py), "-m", "webapi_extractor", "doctor",
-                          *(["--install"] if do_install else [])], cwd=str(ROOT))
+                          *(["--install"] if do_install else [])], cwd=str(ROOT),
+                         creationflags=NO_WINDOW)
 
     print()
     print("引导完成。后续用法（请用上面那个解释器路径，不要用全局 python）：")

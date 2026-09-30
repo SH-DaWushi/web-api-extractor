@@ -19,6 +19,11 @@ from pathlib import Path
 REQUIRED = ["fastmcp", "httpx", "playwright"]
 HTTP_PORT = 8422
 
+# pip / playwright 都是**控制台**程序：父进程没有控制台时（服务被宿主静默启动），
+# Windows 会为子进程**新建一个黑色窗口**。加这个标志就不建控制台。
+# 非 Windows 必须传 0 —— POSIX 上 subprocess 不接受非零 creationflags。
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+
 OK = "[ OK ]"
 BAD = "[FAIL]"
 WARN = "[WARN]"
@@ -93,10 +98,12 @@ def check_port() -> bool:
 def install(missing: list[str], chromium_missing: bool) -> None:
     if missing:
         print(f"\n>>> 安装缺失依赖: {' '.join(missing)}")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--disable-pip-version-check", *missing])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--disable-pip-version-check", *missing],
+                              creationflags=NO_WINDOW)
     if chromium_missing:
         print("\n>>> 安装 Playwright Chromium 内核（较大，请耐心等待）")
-        subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+        subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"],
+                              creationflags=NO_WINDOW)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -1053,11 +1053,16 @@ def _install_playwright() -> bool:
         pass
     try:
         import subprocess
+        # 不建控制台窗口：宿主（Cherry / Claude…）通常**没有**控制台，
+        # 而 python -m pip 是控制台程序 —— 不指定这个标志 Windows 会给它新开一个
+        # 黑色窗口，用户看到的就是「MCP 服务一启动就弹黑框」。非 Windows 传 0。
         subprocess.run([sys.executable, "-m", "pip", "install",
                         "--disable-pip-version-check", "-q",
                         "playwright==" + _PLAYWRIGHT_PIN],
                        timeout=600, check=False,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       creationflags=(getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                                      if sys.platform == "win32" else 0))
     except Exception as exc:
         _log_error("playwright install failed: " + type(exc).__name__)
     try:
@@ -1072,9 +1077,12 @@ def _install_chromium() -> bool:
     """浏览器内核缺失时补装一次（内核与 playwright 版本绑定）。"""
     try:
         import subprocess
+        # 同上：内核补装同样不能弹控制台窗口。
         subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"],
                        timeout=900, check=False,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       creationflags=(getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                                      if sys.platform == "win32" else 0))
         return True
     except Exception as exc:
         _log_error("chromium install failed: " + type(exc).__name__)
