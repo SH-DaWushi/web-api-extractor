@@ -377,7 +377,10 @@ def session_to_registry_entries(analysis: dict[str, Any], session_id: str,
         if not forced and not include_noise and generation_skip_reasons(endpoint):
             continue
         path = endpoint.get("path", "")
-        path_params = [seg.strip("{}") for seg in path.split("/") if seg.startswith("{")]
+        # 占位符可能**嵌在段中间**（OData 记录键：`实体({实体_id})`），所以按出现位置找，
+        # 不能只认「整段以 { 开头」—— 漏掉的话生成物拿不到这个参数，`_emit_path` 会把
+        # `{实体_id}` 当普通字符转义，发出去的 URL 里带着字面量花括号。
+        path_params = re.findall(r"\{([^{}]+)\}", path)
         entries.append({
             # F6: 衔接键原样透传（analyzer 分配，或旧数据按 method/host/path 派生）。
             # 生成阶段按这个键解释 endpoint_ids，不能再按列表位置重编号。

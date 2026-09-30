@@ -641,13 +641,47 @@ def get_param_alias(host: str | None = None) -> dict[str, str]:
         return dict(PARAM_ALIAS)
 
 
+# UUID / GUID（8-4-4-4-12 十六进制）。没有哪个接口会把 UUID 当**固定**段名，
+# 所以它单独成立就足以判定「这是记录键」。少了这条，`/api/tickets/<guid>` 这类
+# 详情/修改接口不参数化 → 抓包时那条记录的 GUID 被写死进生成物（工具永远只操作
+# 那一条，且不报错），同一实体的多条记录还会各自变成一个工具。
+_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+
+
 def _is_id_segment(seg: str) -> bool:
-    """数字 ID、下划线/逗号分隔数字（item_merged.10_773）、<type>-<id>（achievement-12782）。"""
+    """数字 ID、下划线/逗号分隔数字（item_merged.10_773）、<type>-<id>（achievement-12782）、UUID。"""
     return bool(
         re.fullmatch(r"\d+([_,]\d+)*", seg)
         or re.fullmatch(r"item_merged\.\d+(_\d+)*", seg)
         or re.fullmatch(r"[a-z_]+-\d+([_,]\d+)*", seg)
+        # 注意：上面那条 `[a-z_]+-\d+` 匹配不到 UUID —— `638ca21c-1111-…` 以数字开头，
+        # 且后面几段混有字母，必须由下面这条兜住。
+        or _UUID_RE.fullmatch(seg)
     )
+
+
+# OData 记录键：``实体(键)``。OData v4 的标准寻址语法 —— Dynamics 365 / CRM、
+# SharePoint REST、SAP Gateway / NetWeaver、各类 WCF Data Service 都在用。
+# 段里「实体名 + 括号 + 键」粘成一段，整段既不是数字也不是 UUID，故上面那条
+# 形态判定永远不成立；不单独认它，详情/修改接口就会把抓包时那条记录的 GUID
+# 写死进路径与工具名。
+_ODATA_KEY_RE = re.compile(r"^([A-Za-z_][\w.\-]*)\(([^()]*)\)$")
+
+
+def _split_odata_key(segment: str) -> tuple[str, str, str] | None:
+    """``实体(键)`` → ``(实体名, 键, 引号)``；不是这个形态返回 None。
+
+    键外层若是 OData 的单引号（``Products('Widget')``），剥掉后再判形态，
+    引号原样带回 —— 折成参数时要写回 ``实体('{id}')``，否则生成的 URL 是错的。
+    括号内含嵌套括号（``GetMetadata(...)`` 那类表达式）一律不认，保持原样。
+    """
+    match = _ODATA_KEY_RE.fullmatch(segment)
+    if not match:
+        return None
+    entity, key = match.group(1), match.group(2)
+    if len(key) >= 2 and key.startswith("'") and key.endswith("'"):
+        return entity, key[1:-1], "'"
+    return entity, key, ""
 
 
 def parameterize(path: str, host: str | None = None) -> tuple[str, list[str]]:
@@ -659,7 +693,27 @@ def parameterize(path: str, host: str | None = None) -> tuple[str, list[str]]:
     segs = path.split("/")
     out: list[str] = []
     names: list[str] = []
+
+    def _unique(base: str) -> str:
+        name = alias.get(base) or (PARAM_ALIAS_TEMPLATE.format(name=base) if base else "id")
+        if name in names:
+            name = f"{name}_{names.count(name) + 1}"
+        return name
+
     for i, seg in enumerate(segs):
+        # OData 记录键：实体名要留在路径里，只把括号内的键参数化。
+        # 键不是 ID 形态（``Products('Widget')`` 这类字面量键）就整段保持原样。
+        entity_key = _split_odata_key(seg)
+        if entity_key is not None:
+            entity, key, quote = entity_key
+            if not _is_id_segment(key):
+                out.append(seg)
+                continue
+            base = re.sub(r"[^a-z0-9]+", "_", entity.lower()).strip("_")
+            name = _unique(base)
+            names.append(name)
+            out.append(f"{entity}({quote}{{{name}}}{quote})")
+            continue
         if not (_is_id_segment(seg) or re.fullmatch(r"\{[^}]+\}", seg)):
             out.append(seg)
             continue
@@ -668,9 +722,7 @@ def parameterize(path: str, host: str | None = None) -> tuple[str, list[str]]:
             continue
         prev = segs[i - 1] if i > 0 else ""
         base = re.sub(r"[^a-z0-9]+", "_", prev.lower()).strip("_")
-        name = alias.get(base) or (PARAM_ALIAS_TEMPLATE.format(name=base) if base else "id")
-        if name in names:
-            name = f"{name}_{names.count(name) + 1}"
+        name = _unique(base)
         names.append(name)
         out.append(f"{{{name}}}")
     return "/".join(out), names
