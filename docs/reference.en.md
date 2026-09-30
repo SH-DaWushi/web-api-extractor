@@ -1146,7 +1146,7 @@ web-api-extractor/
 ├─ LICENSE                      # Custom terms of use (not SPDX / OSI)
 ├─ .gitignore / .gitattributes  # Ignore runtime artifacts; pin line endings (*.sh must be LF)
 ├─ .vscode/mcp.json             # Registers this server as a stdio MCP server (no absolute local paths)
-├─ tests/                       # pytest suite (35 files)
+├─ tests/                       # pytest suite (36 files)
 └─ webapi_extractor/
    ├─ __main__.py               # CLI: doctor | serve-http | (default) stdio
    ├─ server.py                 # MCP server and tool registration

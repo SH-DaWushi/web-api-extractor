@@ -7,7 +7,7 @@ import re
 from typing import Any
 from urllib.parse import unquote_plus
 
-from .bodies import parse_form_urlencoded
+from .bodies import parse_form_urlencoded, split_multipart, split_multipart_part
 from .crypto_analyzer import value_shape
 
 
@@ -45,6 +45,35 @@ def _is_secret_field(name: Any) -> bool:
     if low in SECRET_FIELD_NAMES:
         return True
     return any(marker in low for marker in _SECRET_MARKERS)
+
+
+# 「凭据名」的宽松形态，用于**结构化解析失败**的正文（XML / JS 对象字面量 /
+# 宽松 JSON / multipart 字段里再嵌一层 JSON……）。
+# 这类正文没有可信的字段边界，所以这里按**子串**匹配，比 _is_secret_field 更宽：
+# 解析不了的时候，多判一个字段像凭据只是少写一条体，漏判一个就是明文密码落盘。
+_SECRET_NAME_RE = (
+    r"(?:[A-Za-z0-9_.\-]*(?:password|passwd|pwd|secret|passcode|token"
+    r"|api[_-]?key|sms[_-]?code|verification[_-]?code|auth[_-]?code|captcha)"
+    r"[A-Za-z0-9_.\-]*"
+    r"|(?<![A-Za-z0-9_])(?:pin|otp|pass)(?![A-Za-z0-9_]))"
+)
+_SECRET_NAME_SEARCH_RE = re.compile(_SECRET_NAME_RE, re.I)
+# 已遮蔽的形态：名字与 *** 之间只有分隔语法（引号 / 冒号 / 等号 / 空白 / 换行）。
+_MASKED_SECRET_RE = re.compile(r"(?:" + _SECRET_NAME_RE + r")[^A-Za-z0-9]{0,24}?\*{3}", re.I)
+
+
+def mentions_unmasked_secret(text: str) -> bool:
+    """正文里是否还留着**没被遮蔽**的凭据名（写盘前的最后一道闸）。
+
+    做法：先把「凭据名 … ***」这种已遮蔽的形态整段摘掉，再看剩下的是否还提到
+    凭据名。这样就不必理解正文语法——XML、JS 字面量、multipart 里嵌的 JSON、
+    甚至我们没见过的编码，都落进同一套判定。
+
+    误伤是**有意的**：正文里只要还剩一个没遮住的凭据名（哪怕只是散文里的一句
+    "reset your password"），就整条体都不写盘。少一条请求体只影响参数推断，
+    写下去一条明文口令是不可逆的。
+    """
+    return bool(_SECRET_NAME_SEARCH_RE.search(_MASKED_SECRET_RE.sub(" ", text)))
 
 
 # 请求头里的凭据：X-Auth-Token / X-Api-Key / X-Access-Token / Api-Key / X-Client-Secret …
@@ -130,18 +159,19 @@ def redact_headers(headers: dict[str, str]) -> dict[str, str]:
     return result
 
 
-def _redact_form(payload: str) -> tuple[str, list[str], dict[str, dict]]:
+def _redact_form(payload: str) -> tuple[str, list[str], dict[str, dict]] | None:
     """表单编码体的脱敏，语义与 _redact_json 一致（值遮蔽 + 保留形态元数据）。
 
     **结构性键名一律保留**（analyzer #23 靠它们生成工具参数），只把凭据的**值**遮掉。
     只要请求体确实是表单编码，就逐字段判「是不是凭据」——
     不再有「整串原样返回」的路径，也不再要求值长度（D1/D2）。
+
+    不是表单编码时返回 ``None``（**不再**原样交出正文）：由 :func:`redact_payload`
+    继续尝试 multipart，最后交给「写盘前终检」裁决。
     """
     pairs = parse_form_urlencoded(payload)
     if pairs is None:
-        # 只对**确实不是**表单编码的正文（JSON/HTML/XML/纯文本/空）走到这里——
-        # 它们由上层（JSON 路径）或「原样保留」语义处理。
-        return payload, [], {}
+        return None
     out: list[str] = []
     token_paths: list[str] = []
     shape_meta: dict[str, dict] = {}
@@ -161,17 +191,90 @@ def _redact_form(payload: str) -> tuple[str, list[str], dict[str, dict]]:
     return "&".join(out), token_paths, shape_meta
 
 
+def _redact_multipart(payload: str) -> tuple[str, list[str], dict[str, dict]] | None:
+    """multipart/form-data 的脱敏：按字段名就地替换值，其余字节**原样**拼回。
+
+    只把「字段名像凭据」的那一段的值换成 ``***``；边界、头部、段顺序、
+    未命名段（前导 / 结束分隔符）全都不动，所以保真度与原文一致，
+    analyzer 照样能看出表单结构。
+
+    不是 multipart 返回 ``None``。段结构看不懂却**名字像凭据**时整条返回 ``None``：
+    宁可让调用方丢弃整条体，也不赌那一段里没有密码。
+    """
+    split = split_multipart(payload)
+    if split is None:
+        return None
+    boundary, parts = split
+    out: list[str] = []
+    token_paths: list[str] = []
+    shape_meta: dict[str, dict] = {}
+    for name, chunk in parts:
+        if name is None or not _is_secret_field(name):
+            out.append(chunk)
+            continue
+        part = split_multipart_part(chunk)
+        if part is None:
+            return None                     # 名字像凭据却拆不开 → 交给终检丢弃整条体
+        head, value = part
+        core, newline = _split_trailing_newline(value)
+        path = f"$.{name}"
+        if TOKEN_FIELD_PATTERN.search(name):
+            token_paths.append(path)
+        if core:
+            shape_meta[path] = {"len": len(core), "shape": value_shape(core)}
+        out.append(f"{head}***{newline}")   # 值后的换行属于分隔语法，留在原位
+    return boundary.join(out), token_paths, shape_meta
+
+
+def _split_trailing_newline(value: str) -> tuple[str, str]:
+    """把值末尾的 ``\\r\\n`` / ``\\n`` 摘出来——它属于边界语法，不属于值。"""
+    for newline in ("\r\n", "\n"):
+        if value.endswith(newline):
+            return value[: -len(newline)], newline
+    return value, ""
+
+
 def redact_payload(payload: str | None) -> tuple[str | None, list[str], dict[str, dict]]:
     """Returns (redacted_payload, token_paths, shape_meta). shape_meta 见 _redact_json。
 
-    支持 JSON 与 ``application/x-www-form-urlencoded`` 两种体；
-    两者都遮蔽敏感值并保留形态元数据（len/shape），供密文判定复用。
+    依次尝试 JSON、multipart、``application/x-www-form-urlencoded`` 三种体，
+    命中哪种就按哪种脱敏（值遮蔽 + 保留形态元数据，供密文判定复用）。
+
+    **三种都不命中时不再原样放行**：先留着交给 :func:`mentions_unmasked_secret`
+    终检——正文里只要还提到凭据名就返回 ``None``（调用方据此不写体、只记大小），
+    否则才原样保留。修复前这里有一条 fail-open 路径：任何「看着像 JSON 但不是
+    严格 JSON」或「不是表单编码」的正文都原样返回，于是
+    ``{'username':'bob','password':'hunter2'}``、multipart、XML 登录体里的
+    明文口令被完整写进 capture.jsonl（用户实测复现）。
     """
     if payload is None:
         return None, [], {}
+    if not isinstance(payload, str):
+        # 非文本体（CDP 不会这样给）：无从脱敏，也不该按原文判定，原样交回。
+        return payload, [], {}
+    result = _redact_json_body(payload)
+    if result is None:
+        result = _redact_multipart(payload)
+    if result is None:
+        result = _redact_form(payload)
+    if result is None:
+        result = (payload, [], {})           # 认不出来：先原样，交给下面的终检
+    redacted, token_paths, shape_meta = result
+    if mentions_unmasked_secret(redacted):
+        return None, [], {}                  # 终检不过 → 整条体不落盘
+    return redacted, token_paths, shape_meta
+
+
+def _redact_json_body(payload: str) -> tuple[str, list[str], dict[str, dict]] | None:
+    """严格 JSON 体的脱敏；不是 JSON 返回 ``None``。
+
+    比旧实现宽容两点，都是**为了多遮一点**：
+    * 容忍开头的 BOM（``\\ufeff``）——带 BOM 的体此前直接掉进 fail-open 路径；
+    * ``strict=False``——字符串里的裸换行/制表符此前会让解析失败，同样掉进那条路径。
+    """
     try:
-        parsed = json.loads(payload)
-    except json.JSONDecodeError:
-        return _redact_form(payload)
+        parsed = json.loads(payload.lstrip("\ufeff"), strict=False)
+    except (TypeError, ValueError):
+        return None
     redacted, token_paths, shape_meta = _redact_json(parsed)
     return json.dumps(redacted, ensure_ascii=False, separators=(",", ":")), token_paths, shape_meta

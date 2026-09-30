@@ -644,7 +644,10 @@ class CaptureSession:
             body_dropped = True
         else:
             redacted_body, token_paths, shape_meta = redact_payload(body)
-            body_dropped = False
+            # 脱敏层认不出这条体的编码、又不敢保证里面没有凭据时会返回 None
+            # （fail-closed）：那同样是「这条体没写下来」，如实标记成 dropped，
+            # 别让下游把「有体但没写」当成「本来就没有体」。
+            body_dropped = body is not None and redacted_body is None
         # S21：会话维度的键——子会话（OOPIF）加前缀，主会话保持原样。
         request_id = self._session_key(cdp, event.get("requestId", ""))
         # Issue #1: 合并 requestWillBeSent 与（通常先到的）ExtraInfo 里的头。
@@ -844,7 +847,9 @@ class CaptureSession:
             dropped = True
         else:
             redacted, token_paths, shape_meta = redact_payload(payload)
-            dropped = False
+            # 与请求体同一条 fail-closed 语义：脱敏层不敢保证干净就返回 None，
+            # 这里也必须记成「体被丢弃」，而不是「体是空的」。
+            dropped = payload is not None and redacted is None
         await self.emit({
             "type": "websocket_frame", "ts": utc_now(), "requestId": request_id,
             "direction": direction, "opcode": opcode, "mask": response.get("mask"),

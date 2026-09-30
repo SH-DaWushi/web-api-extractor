@@ -934,7 +934,7 @@ WebAPIExtractor/
 ├─ LICENSE                      # 自拟使用条款（非 SPDX / OSI）
 ├─ .gitignore / .gitattributes  # 忽略运行产物；锁定行尾（*.sh 必须为 LF）
 ├─ .vscode/mcp.json             # 把本服务注册为 stdio MCP（无本机绝对路径）
-├─ tests/                       # pytest 套件（35 个文件）
+├─ tests/                       # pytest 套件（36 个文件）
 └─ webapi_extractor/
    ├─ __main__.py               # CLI：doctor | serve-http |（默认）stdio
    ├─ server.py                 # MCP Server 与工具注册

@@ -12,10 +12,13 @@ readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "SH-DaWushi" }]
 requires-python = ">=3.10"
+# 与 requirements.txt 保持**同一组约束**（含上界）：两处写着不同的范围时，
+# `pip install -e .` 与 `pip install -r requirements.txt` 会装出不同的依赖图，
+# 而 fastmcp 5.x 已经改过 server 侧的导入路径（实测 ImportError）。
 dependencies = [
-    "fastmcp>=2.0",
+    "fastmcp>=2.3,<5",
     "httpx>=0.27",
-    "playwright>=1.45",
+    "playwright>=1.45,<2",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
