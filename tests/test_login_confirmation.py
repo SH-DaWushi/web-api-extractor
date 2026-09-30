@@ -545,8 +545,18 @@ class _FakeResponse:
 
 
 class _FakeHttpxClient:
+    """POST **之后**服务端才下发凭据类 Cookie（loginToken）—— 真实登录成功的样子。
+
+    修复前 loginToken 是**预置**在罐子里的（构造时就有），于是它落在 `http_login` 开头
+    的 Cookie 基线内。那种写法只在「Cookie 罐非空就算登录成功」的旧判据下成立 ——
+    而**登录页自己**就会下发 JSESSIONID，同一套判据会把失败的登录误判成 `post_ok`
+    （详见 tests/test_login_mode.py 里新增的回归用例）。改成由 POST 下发，
+    这个 fixture 描述的才是真实的成功路径。
+    """
+
     def __init__(self, *args, **kwargs):
-        self.cookies = type("_Jar", (), {"jar": [_FakeCookie("loginToken", "tok-1")]})()
+        self.jar: list = []          # 空罐起步：http_login 每次都新建 client
+        self.cookies = type("_Jar", (), {"jar": self.jar})()
 
     async def __aenter__(self):
         return self
@@ -558,6 +568,7 @@ class _FakeHttpxClient:
         return _FakeResponse()
 
     async def post(self, *args, **kwargs):
+        self.jar.append(_FakeCookie("loginToken", "tok-1"))   # 登录成功才下发
         return _FakeResponse()
 
 

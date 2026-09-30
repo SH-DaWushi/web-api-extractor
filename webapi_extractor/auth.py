@@ -320,22 +320,30 @@ def _fill_form_fields(fields: dict[str, str], username: str, password: str) -> d
     return fields
 
 
-async def _post_form_from_page(client: Any, url: str, username: str, password: str) -> tuple[Any, bool]:
+async def _post_form_from_page(client: Any, url: str, username: str, password: str
+                               ) -> tuple[Any, bool, set[tuple[str, str]]]:
     """抓登录页 → 带上页面里的隐藏字段（CSRF / 防重放 token）→ POST 到 form action。
 
-    返回 ``(响应, 是否真的找到了表单)``：没找到表单时原样返回页面响应，与修复前的
-    行为一致（调用方随后按「响应里有凭据吗」判定成功与否）。
+    返回 ``(响应, 是否真的找到了表单, POST 前的 Cookie 快照)``：没找到表单时原样返回
+    页面响应，与修复前行为一致（调用方随后按「响应里有凭据吗」判定成功与否）。
+
+    第三个返回值是判「这次 POST 有没有换来新凭据」的**基线**，必须取在登录页 GET
+    **之后**、表单 POST **之前**。旧实现把基线取在 GET 之前，而 http_login 每次都新建
+    httpx.AsyncClient（空罐），于是登录页自己下发的 JSESSIONID / PHPSESSID
+    （名字命中 `_CREDENTIAL_COOKIE_MARKS` 里的 session / sid）永远算「新增」——
+    一次**失败**的表单登录也会被判成 `post_ok`，生成物据此发射必然失败的自动重登录。
     """
     page = await client.get(url)
     if page.status_code >= 400:
-        return page, False
+        return page, False, _cookie_snapshot(client)
     parser = _LoginFormParser()
     parser.feed(page.text)
     if not parser.fields:
-        return page, False
+        return page, False, _cookie_snapshot(client)
     fields = _fill_form_fields(parser.fields, username, password)
     action = urljoin(str(page.url), parser.action or str(page.url))
-    return await client.post(action, data=fields), True
+    before_post = _cookie_snapshot(client)      # ← GET 之后、POST 之前
+    return await client.post(action, data=fields), True, before_post
 
 
 def _evaluate_login_response(response: Any, client: Any) -> tuple[dict[str, Any], bool]:
@@ -365,25 +373,24 @@ def _cookie_snapshot(client: Any) -> set[tuple[str, str]]:
 _CREDENTIAL_COOKIE_MARKS = ("token", "session", "sid", "auth", "jwt", "ticket")
 
 
-def _has_login_credentials(client: Any, token_data: dict[str, Any],
-                           cookies_before: set[tuple[str, str]]) -> bool:
+def _has_login_credentials(cookies_before: set[tuple[str, str]],
+                           cookies_after: set[tuple[str, str]],
+                           token_data: dict[str, Any]) -> bool:
     """这次 POST 到底有没有换来**登录凭据** —— 只看有没有、不看是什么。
 
     * 响应体里（**含嵌套**）出现像 token 的键（`data.token` 也算）；
-    * 或 Cookie 罐里**新增**了名字像凭据的 Cookie（相对 POST 前的基线）。
-      「相对基线」很关键：登录页自己就会下发 JSESSIONID，只看「有没有」必然误判。
+    * 或这次 POST **前后**新增/变化的、名字像凭据的 Cookie。
+
+    ⚠️ 两个快照都必须是**这一次 POST 前后当场取的**，不能事后拿当前 Cookie 罐去比：
+    两次尝试之间还会走一次登录页 GET，它下发的 JSESSIONID 会**倒灌**给此前那次失败的
+    POST 当证据（实测：JSON 先失败、紧接着表单路径 GET 到登录页并下了 JSESSIONID，
+    JSON 那一次就被判成「换来了凭据」，整站结论变成 `post_ok`）。
+    同理也不能只看「有没有」：登录页自己就会下发 session 类 Cookie。
     """
     if _contains_token_key(token_data):
         return True
-    try:
-        jar = list(client.cookies.jar)
-    except Exception:      # noqa: BLE001
-        return False
-    for cookie in jar:
-        name = str(getattr(cookie, "name", "") or "")
-        if (getattr(cookie, "name", None), getattr(cookie, "value", None)) in cookies_before:
-            continue
-        if any(mark in name.lower() for mark in _CREDENTIAL_COOKIE_MARKS):
+    for name, _value in cookies_after - cookies_before:
+        if any(mark in str(name).lower() for mark in _CREDENTIAL_COOKIE_MARKS):
             return True
     return False
 
@@ -457,20 +464,25 @@ async def http_login(
     async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
         endpoint = login_endpoint or url
         payload: dict[str, Any] = {"username": username, "password": password}
-        cookies_before = _cookie_snapshot(client)
         token_data: dict[str, Any] = {}
         success = False
-        # 真的**发出去过**的 POST：`(响应, 解析出的响应体)`。判定「实测能不能换来凭据」
-        # 只看它们 —— 登录页的 GET 响应不算（它本来就会发一个会话 Cookie）。
-        posted: list[tuple[Any, dict[str, Any]]] = []
+        # 真的**发出去过**的 POST：`(响应, 解析出的响应体, 该次 POST 前后的 Cookie 快照)`。
+        # 判定「实测能不能换来凭据」只看它们 —— 登录页的 GET 响应不算
+        # （它本来就会发一个会话 Cookie）。
+        # 快照**逐次**取在各自 POST 的前后：两次尝试之间可能隔着一次登录页 GET，
+        # 它下发的 JSESSIONID 属于页面自己，不能算作某次 POST 换来的凭据。
+        posted: list[tuple[Any, dict[str, Any],
+                           set[tuple[str, str]], set[tuple[str, str]]]] = []
 
-        def _record_attempt(shape: str, resp: Any) -> None:
+        def _record_attempt(shape: str, resp: Any,
+                            before: set[tuple[str, str]],
+                            after: set[tuple[str, str]]) -> None:
             nonlocal response, token_data, success
             attempts.note(shape, resp)
             if shape in ("json", "form"):
                 response = resp
                 token_data, success = _evaluate_login_response(resp, client)
-                posted.append((resp, token_data))
+                posted.append((resp, token_data, before, after))
             elif response is None:
                 # 一次 POST 都还没发出去（登录页里根本没有表单）：沿用修复前对**页面**
                 # 响应的判定，别把「登录页自己下发的会话 Cookie」当成登录成功的新证据。
@@ -479,45 +491,56 @@ async def http_login(
 
         response: Any = None
         if login_endpoint:
-            _record_attempt("json", await client.post(endpoint, json=payload))
+            before = _cookie_snapshot(client)
+            _record_attempt("json", await client.post(endpoint, json=payload),
+                            before, _cookie_snapshot(client))
             if not success:
                 # 修正重试：改用登录页里那张表单（带上页面里的隐藏字段）。
-                page, found = await _post_form_from_page(client, url, username, password)
-                _record_attempt("form" if found else "page", page)
+                page, found, before = await _post_form_from_page(client, url, username, password)
+                _record_attempt("form" if found else "page", page,
+                                before, _cookie_snapshot(client))
         else:
-            page, found = await _post_form_from_page(client, url, username, password)
-            _record_attempt("form" if found else "page", page)
+            page, found, before = await _post_form_from_page(client, url, username, password)
+            _record_attempt("form" if found else "page", page, before, _cookie_snapshot(client))
             if not success:
                 # 修正重试：改发 JSON（不少站点同一个地址两种编码都收）。
-                _record_attempt("json", await client.post(url, json=payload))
+                before = _cookie_snapshot(client)
+                _record_attempt("json", await client.post(url, json=payload),
+                                before, _cookie_snapshot(client))
         # 「实测有凭据」必须比「工具报成功」严：修复前的成功判据只看 Cookie 罐非空，
         # 而**登录页自己**就会下发 JSESSIONID —— 只 GET 一下就报成功，等于把带验证码的
         # 站点记成「能构造请求登录」，生成物又会假装有 401 自动重登录。所以：
-        # 只有真的发过 POST、且响应给出 token 或**新增的**凭据类 Cookie，才算实测通过。
+        # 只有真的发过 POST、且响应给出 token 或**该次 POST 换来**的凭据类 Cookie，
+        # 才算实测通过。基线逐次取（见 posted），否则登录页的会话 Cookie 会顶替凭据。
         evidence = any(
             getattr(resp, "status_code", 0) in (200, 201, 204, 302)
-            and _has_login_credentials(client, data, cookies_before)
-            for resp, data in posted)
-        # 实测拿到凭据 = 事实上的登录成功。工具的历史成功判据偏窄（只认**顶层** token 或
-        # Cookie 罐非空），这里不推翻它，而是把实测证据**并**进去：响应把 token 放在
-        # `data.token` 这类嵌套字段里时，旧判据说「失败」，会把 Agent 引向「改用浏览器
-        # 登录」—— 而生成物其实能自动登录。结论与回报必须一致，不能各说各话。
-        success = success or evidence
+            and _has_login_credentials(before, after, data)
+            for resp, data, before, after in posted)
         if evidence:
             # 实测确认「构造请求能换来凭据」→ 这个站点能自动登录（静态说啥都以此为准）。
             verdict = "post_ok"
         elif success:
-            # 工具按旧判据算「成功」（多半是登录页的会话 Cookie），但没有凭据证据：
-            # 不下结论，交回静态预判（边车里记 no_evidence）。
+            # 工具按旧判据算「成功」（多半只是登录页自己下发的会话 Cookie），但没有凭据
+            # 证据：不下结论，交回静态预判（边车里记 no_evidence）。
+            # 注意 success 只用来**区分这两种失败**（有没有到「疑似成功」），
+            # 不再决定回报与落盘 —— 见下。
             verdict = "no_evidence"
         else:
             verdict = "interactive"
-        reason = "" if success else _classify_login_failure(response)
+        reason = "" if evidence else _classify_login_failure(response)
         site_key = _site_key(url)
         recorded = record_login_mode(
             auth_states_dir, url, verdict, attempts=len(attempts.shapes), reason=reason,
             statuses=attempts.statuses)
-        if not success:
+        if not evidence:
+            # **没有凭据证据就是没登录成功**，回报与落盘一律跟着证据走：
+            #   * 不写 auth_states/<site>.json —— 那是一份「其实没登录成功」的登录态，
+            #     会被后续 start_capture(auth_state_path=…) 当成有效登录态复用，
+            #     是个假绿灯（见 record_login_mode 的说明），比没有更糟；
+            #   * 如实回报失败，并把用户引到交互式登录。
+            # 修复前这里跟的是旧判据 success：只 GET 到登录页（页面自带 JSESSIONID）
+            # 就会写出登录态、回报 success=True，而边车里同时记着 no_evidence ——
+            # 「结论与回报必须一致」在这条分支上是破的。
             # 结论落盘 + 一句说得通、可行动的下一步（面向完全不懂 HTTP 的人）。
             return {
                 "success": False,

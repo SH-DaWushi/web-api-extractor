@@ -438,6 +438,27 @@ def _login_form_page() -> _Resp:
                            '<input name="password"><input name="csrf" value="c1"></form>')
 
 
+class _RealisticClient(_FakeClient):
+    """登录页的 GET **由响应**下发会话 Cookie —— 这才是真实服务器的时序。
+
+    `_FakeClient` 是把 Cookie 预置在罐子里（构造时传入 `cookies=[…]`），于是它落在
+    `http_login` 开头的基线内；而真实 `http_login` 每次都新建 `httpx.AsyncClient`
+    （空罐），JSESSIONID 是登录页的 GET **在流程中**下发的。
+    这两者只差一个先后，判定结果却完全相反 —— 见下面的回归用例。
+    """
+
+    def __init__(self, *args, page_sets_cookie=(("JSESSIONID", "s1"),), **kwargs):
+        super().__init__(*args, **kwargs)
+        self._page_cookies = list(page_sets_cookie)
+
+    async def get(self, url, **kwargs):
+        response = await super().get(url, **kwargs)
+        for name, value in self._page_cookies:
+            self.cookies.jar.append(_FakeCookie(name, value))
+        self._page_cookies = []
+        return response
+
+
 class TestHttpLoginRecordsTheVerdict:
     def test_success_with_token_records_post_ok(self, monkeypatch, tmp_path):
         states = tmp_path / "auth_states"
@@ -468,7 +489,12 @@ class TestHttpLoginRecordsTheVerdict:
         assert result["success"] is True, "结论说能登录，回报就不能说失败"
 
     def test_verdict_and_report_never_contradict(self, monkeypatch, tmp_path):
-        """不变量：`interactive` ⇒ 回报失败；`post_ok` ⇒ 回报成功。"""
+        """不变量：`interactive` ⇒ 回报失败；`post_ok` ⇒ 回报成功。
+
+        第三支（`no_evidence` ⇒ 回报失败）见
+        `test_no_evidence_reports_failure_and_writes_no_login_state` ——
+        旧实现漏的正是这一支。
+        """
         states = tmp_path / "auth_states"
         client = _FakeClient([_Resp(401, text="bad"), _Resp(401, text="bad")],
                              page=_login_form_page())
@@ -503,6 +529,71 @@ class TestHttpLoginRecordsTheVerdict:
         sidecar = json.loads((states / "oa_example_com.login_mode.json").read_text("utf-8"))
         assert sidecar["verdict"] == "no_evidence", \
             "只在「POST 前后 Cookie 没变化」时才会走到这里：不下结论，交回静态预判"
+
+    def test_login_page_cookie_from_the_get_is_not_evidence(self, monkeypatch, tmp_path):
+        """登录页的 GET **在流程中**下发 JSESSIONID，随后表单 POST 失败 —— 不是凭据。
+
+        这才是真实时序：`http_login` 每次都新建 `httpx.AsyncClient`（空罐），
+        JSESSIONID 只能由登录页的 GET 在流程里带进来。旧实现把基线取在 GET **之前**，
+        于是这个页面级会话 Cookie 成了「POST 换来的新凭据」，一次**失败**的登录被判成
+        `post_ok`；生成物据此发射 `login()` + 401 自动重登录 —— 而它必然失败。
+        """
+        states = tmp_path / "auth_states"
+        client = _RealisticClient([_Resp(200, text="用户名或密码错误"),
+                                   _Resp(200, text='{"code":1}')], page=_login_form_page())
+        _install_client(monkeypatch, client)
+
+        result = asyncio.run(http_login(LOGIN_URL, ACCOUNT, PASSWORD, states,
+                                        f"{LOGIN_URL}{LOGIN_PATH.lstrip('/')}"))
+        sidecar = json.loads((states / "oa_example_com.login_mode.json").read_text("utf-8"))
+        assert sidecar["verdict"] == "no_evidence", \
+            "登录页自己下发的会话 Cookie 不是「POST 换来的凭据」"
+        assert result["success"] is False, "没有凭据证据就不能回报成功"
+
+    def test_no_evidence_reports_failure_and_writes_no_login_state(self, monkeypatch, tmp_path):
+        """`no_evidence` 这支同样要回报失败、且**不得**留下登录态文件。
+
+        旧实现把 verdict 记成 `no_evidence` 之后，照样写 `auth_states/<site>.json`、
+        照样回报 `success: True` —— 而那份登录态会被 `start_capture(auth_state_path=…)`
+        当成有效登录态复用，是个**假绿灯**（`record_login_mode` 的说明里明写这比没有更糟）。
+        """
+        states = tmp_path / "auth_states"
+        client = _RealisticClient([_Resp(200, text="bad"), _Resp(200, text="bad")],
+                                  page=_login_form_page())
+        _install_client(monkeypatch, client)
+
+        result = asyncio.run(http_login(LOGIN_URL, ACCOUNT, PASSWORD, states,
+                                        f"{LOGIN_URL}{LOGIN_PATH.lstrip('/')}"))
+        assert result["success"] is False
+        assert result["fallback"] == "interactive"
+        assert not (states / "oa_example_com.json").exists(), \
+            "没确认拿到凭据就不该留下登录态文件（假绿灯）"
+        assert "open_browser_login" in result["message"], "失败要给出下一步"
+
+    def test_spa_without_form_is_not_reported_as_a_success(self, monkeypatch, tmp_path):
+        """只 GET 到 SPA 登录页（页面自带 JSESSIONID）：一次 POST 都没发，不算登录成功。"""
+        states = tmp_path / "auth_states"
+        client = _RealisticClient([], page=_Resp(200, text="<html>login</html>"))
+        _install_client(monkeypatch, client)
+
+        result = asyncio.run(http_login(LOGIN_URL, ACCOUNT, PASSWORD, states))
+        assert client.calls == [("GET", LOGIN_URL, "")], "没找到表单时不该乱 POST"
+        assert result["success"] is False
+        assert not (states / "oa_example_com.json").exists()
+
+    def test_post_that_really_brings_credentials_still_succeeds(self, monkeypatch, tmp_path):
+        """对照组：POST 确实换来凭据时，照旧 `post_ok` / 成功 / 写登录态（别修过头）。"""
+        states = tmp_path / "auth_states"
+        client = _RealisticClient([_Resp(200, text="ok")],
+                                  post_sets_cookies=[("loginToken", "t9")])
+        _install_client(monkeypatch, client)
+
+        result = asyncio.run(http_login(LOGIN_URL, ACCOUNT, PASSWORD, states,
+                                        f"{LOGIN_URL}{LOGIN_PATH.lstrip('/')}"))
+        sidecar = json.loads((states / "oa_example_com.login_mode.json").read_text("utf-8"))
+        assert sidecar["verdict"] == "post_ok"
+        assert result["success"] is True
+        assert (states / "oa_example_com.json").exists()
 
     def test_failure_posts_twice_with_a_corrected_shape(self, monkeypatch, tmp_path):
         """失败 → 换个形态**再 POST 一次**（参数承载方式一并修正），并落盘 interactive。"""
