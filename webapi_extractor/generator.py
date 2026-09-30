@@ -54,7 +54,7 @@ def _interactive_login_required(auth_login: dict | None) -> bool:
     return isinstance(post_login, dict) and post_login.get("verdict") == "interactive"
 
 
-# IPv4 字面量的开头（``172.16.105.44`` / ``10.0.0.5``）。只认「四段点分十进制」，
+# IPv4 字面量的开头（如 ``10.0.0.5``）。只认「四段点分十进制」，
 # 故 ``3m.example.com`` 这类以数字起头的域名不会误判。
 _IPV4_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}")
 
@@ -65,9 +65,9 @@ def _site_name_from_session_id(session_id: str) -> str:
     会话 id 形如 ``20260929_120000_<host>_<hex4>``（见 ``server.new_session_id``），
     host 里的 ``:`` 已被换成 ``_``、``.`` 保留。**修复前**一律取 host 的「第一个点号
     之前」那一段：正常域名 ``oa.example.com`` 得到可读的 ``oa``，但 IPv4 主机
-    ``172.16.105.44`` 只剩 ``172`` —— 站点名与 env 前缀都退化成 ``172``，同一网段的
-    多台设备还会互相撞名（``172_ACCOUNT`` / ``172_TOKEN`` 之类）。IPv4 字面量改为
-    **整段保留、点换成连字符**（``172-16-105-44`` → env 前缀 ``172_16_105_44``，
+    ``10.0.0.5`` 只剩 ``10`` —— 站点名与 env 前缀都退化成 ``10``，同一网段的
+    多台设备还会互相撞名（``10_ACCOUNT`` / ``10_TOKEN`` 之类）。IPv4 字面量改为
+    **整段保留、点换成连字符**（``10-0-0-5`` → env 前缀 ``10_0_0_5``，
     可读且仍是合法 env 名）。非 IP 主机**保持原样**（``oa`` 仍是 ``oa``），不动既有站点。
     """
     label = session_id.split("_", 2)[-1]

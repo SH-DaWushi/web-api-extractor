@@ -130,10 +130,30 @@ class TestStaleDetection:
 # 夹具一律直接写**字节**（b"ÄãºÃ" 是 GBK 的「你好」），
 # 不依赖终端编码。
 # --------------------------------------------------------------------------- #
+# 「非 ASCII 载荷」的**唯一来源**（期望值 / 实际值 / 子进程源码都从这里派生）。
+# 轶事：以前断言写一份、子进程源码里又各写一份（还是 \uXXXX 转义形态），替换机器
+# 标识时只改了断言那份、转义那份漏网，于是「实际输出」还带着真机用户名——断言只认
+# 这里的派生值，任何一侧都不会再漂移。
+NON_ASCII_PATH = "C:/Users/用户/数据"                        # 带非 ASCII 目录名的路径
+NON_ASCII_TAIL = NON_ASCII_PATH.split("Users/", 1)[1]        # "用户/数据"
+NON_ASCII_PATH_SHORT = "C:/Users/用户/x"                     # 同类，短后缀
+NON_ASCII_TAIL_SHORT = NON_ASCII_PATH_SHORT.split("Users/", 1)[1]   # "用户/x"
+
+
+def _as_u_escapes(text: str, *, embedded: bool = False) -> str:
+    """把非 ASCII 字符写成 ``\\uXXXX`` 转义，让子进程命令行保持纯 ASCII。
+
+    ``embedded=True``：文本先落进 raw 模板、再被源码解析一层，反斜杠要翻倍
+    （翻倍后写进源码，解析回来仍是单反斜杠转义）。
+    """
+    escaped = "".join(ch if ch.isascii() else "\\u%04x" % ord(ch) for ch in text)
+    return escaped.replace("\\", "\\\\") if embedded else escaped
+
+
 # GBK 的「你好」；作为 UTF-8 解码必然是坏的。
 GBK_HELLO = b"\xc4\xe3\xba\xc3"
 CLEAN_STDOUT = json.dumps(
-    {"jsonrpc": "2.0", "id": 1, "result": {"ok": True, "path": "C:/Users/史霁/x"}},
+    {"jsonrpc": "2.0", "id": 1, "result": {"ok": True, "path": NON_ASCII_PATH_SHORT}},
     ensure_ascii=False).encode("utf-8")
 
 
@@ -151,7 +171,7 @@ def driver():
 class TestExplicitDecoding:
     def test_gbk_bytes_do_not_kill_a_utf8_payload(self, driver):
         text = driver.decode_bytes(CLEAN_STDOUT + GBK_HELLO)
-        assert "史霁" in text, "干净部分必须完好"
+        assert NON_ASCII_PATH_SHORT in text, "干净部分必须完好（含中文路径）"
         assert "result" in text
 
     def test_decoding_is_explicit_not_platform_default(self, driver):
@@ -172,7 +192,7 @@ class TestStderrNeverPollutesResult:
         result = driver.parse_payload(CLEAN_STDOUT, where="stdout")
         diagnostic = driver.decode_bytes(GBK_HELLO)          # stderr 只用来诊断
         assert result["result"]["ok"] is True
-        assert result["result"]["path"].endswith("史霁/x")
+        assert result["result"]["path"].endswith(NON_ASCII_TAIL_SHORT)
         assert "result" not in diagnostic, "诊断不能被当成结果"
 
     def test_diagnostic_of_gbk_stderr_is_readable_and_bounded(self, driver):
@@ -228,8 +248,8 @@ class TestTolerantExtraction:
 
     def test_banner_and_chinese_survive(self, driver):
         body = ("启动横幅: FastMCP 4.0.10\n"
-                '{"jsonrpc":"2.0","id":1,"result":{"path":"C:/Users/史霁/x"}}')
-        assert driver.extract_result(body)["result"]["path"].endswith("史霁/x")
+                '{"jsonrpc":"2.0","id":1,"result":{"path":"%s"}}' % NON_ASCII_PATH_SHORT)
+        assert driver.extract_result(body)["result"]["path"].endswith(NON_ASCII_TAIL_SHORT)
 
     def test_empty_payload_is_none(self, driver):
         assert driver.parse_payload(b"") is None
@@ -321,7 +341,7 @@ class _FakeMcpServer:
                     return
                 body = json.dumps({"jsonrpc": "2.0", "id": 1, "result": {
                     "content": [{"type": "text", "text": json.dumps(
-                        {"path": "C:/Users/史霁/数据", "emoji": "🖥", "ok": True},
+                        {"path": NON_ASCII_PATH, "emoji": "🖥", "ok": True},
                         ensure_ascii=False)}]}}, ensure_ascii=False)
                 self._reply(200, _sse(body), "text/event-stream")
 
@@ -387,7 +407,7 @@ class TestEndToEndSubprocess:
         parsed = json.loads(text)
         inner = json.loads(parsed["result"]["content"][0]["text"])
         assert inner["ok"] is True
-        assert inner["path"].endswith("史霁/数据")
+        assert inner["path"].endswith(NON_ASCII_TAIL)
         assert inner["emoji"] == "🖥", "非 cp936 字符不能把整次调用打死"
         # 服务端的横幅只走 stderr，绝不进结果。
         assert "启动横幅" not in text
@@ -518,13 +538,16 @@ class TestNonTtyOutputIsStrictUtf8:
             f"spec = importlib.util.spec_from_file_location('drv', r'{DRIVER_PATH}');"
             "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m);"
             "sys.stderr.write('notes=' + repr(m.OUTPUT_ENCODING_NOTES));"
-            "m.emit_result({'result': {'path': 'C:/Users/\u53f2\u9701/\u6570\u636e'}})"
+            # 路径来自唯一来源，再转成 \uXXXX 转义（命令行保持纯 ASCII）。
+            "m.emit_result({'result': {'path': '"
+            + _as_u_escapes(NON_ASCII_PATH)
+            + "'}})"
         )
         proc = subprocess.run([sys.executable, "-c", child], stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, cwd=str(DRIVER_PATH.parent))
         assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
         text = proc.stdout.decode("utf-8")          # 严格解码，不容错
-        assert json.loads(text)["result"]["path"].endswith("史霁/数据")
+        assert json.loads(text)["result"]["path"].endswith(NON_ASCII_TAIL)
         err = proc.stderr.decode("utf-8", "replace")
         assert err.count("bytes-utf8") == 2,             f"非 TTY 下两个流都该走「字节 UTF-8」这条路：{err}"
 
@@ -561,12 +584,14 @@ SHARE = 0x1 | 0x2
 OPEN_EXISTING = 3
 ROWS, COLS = 8, 110
 
-# 子进程：导入 mcp_call 并输出一段含中文的结果。路径用 \u 转义写，命令行保持纯 ASCII。
+# 子进程：导入 mcp_call 并输出一段含中文的结果。
+# @@PATH@@ 由测试侧用唯一来源 _as_u_escapes(NON_ASCII_PATH, embedded=True) 替换成
+# \uXXXX 转义，命令行因此保持纯 ASCII（不依赖控制台/命令行的编码）。
 CHILD = (
     "import importlib.util;"
     "spec=importlib.util.spec_from_file_location('drv', r'{driver}');"
     "m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);"
-    "m.emit_result({{'result':{{'path':'C:/Users/\\u53f2\\u9701/\\u6570\\u636e',"
+    "m.emit_result({{'result':{{'path':'@@PATH@@',"
     "'ok':True}}}})"
 )
 
@@ -625,7 +650,10 @@ class TestRealConsoleRendering:
 
     def _screen(self, tmp_path, mode: str) -> tuple[str, int, int]:
         harness = tmp_path / "console_harness.py"
-        harness.write_text(CONSOLE_HARNESS, encoding="utf-8")
+        harness.write_text(
+            CONSOLE_HARNESS.replace(
+                "@@PATH@@", _as_u_escapes(NON_ASCII_PATH, embedded=True)),
+            encoding="utf-8")
         proc = subprocess.run(
             [sys.executable, str(harness), str(DRIVER_PATH), str(tmp_path), mode],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180)
@@ -642,11 +670,11 @@ class TestRealConsoleRendering:
     def test_legacy_stdio_console_shows_chinese(self, tmp_path):
         """旧式控制台流（``PYTHONLEGACYWINDOWSSTDIO=1``）：改动前这里就是乱码。"""
         screen, _before, _after = self._screen(tmp_path, "legacy")
-        assert "史霁/数据" in screen, f"控制台上中文没显示对：{screen!r}"
+        assert NON_ASCII_TAIL in screen, f"控制台上中文没显示对：{screen!r}"
 
     def test_modern_console_shows_chinese(self, tmp_path):
         screen, _before, _after = self._screen(tmp_path, "modern")
-        assert "史霁/数据" in screen, f"控制台上中文没显示对：{screen!r}"
+        assert NON_ASCII_TAIL in screen, f"控制台上中文没显示对：{screen!r}"
 
     def test_the_users_console_code_page_is_restored(self, tmp_path):
         """改代码页只为这一次输出：退出时还原，不留副作用给用户的控制台。"""

@@ -732,13 +732,13 @@ class TestSiteNameFromSessionId:
 
     `new_session_id` 把 host 的 `:` 换成 `_`、`.` 保留，于是会话 id 形如
     `20260929_120000_<host>_<hex4>`。修复前一律取 host 的第一个点号之前那一段：
-    正常域名得到可读的 `oa`，而 `172.16.105.44` 只剩 `172`，env 前缀退化成
-    `172_TOKEN`，同网段多台设备还会撞名。
+    正常域名得到可读的 `oa`，而 `10.0.0.5` 只剩 `10`，env 前缀退化成
+    `10_TOKEN`，同网段多台设备还会撞名。
     """
 
     def test_ipv4_host_keeps_all_octets(self):
-        assert _site_name_from_session_id("20260929_120000_172.16.105.44_ab12") == \
-            "172-16-105-44"
+        assert _site_name_from_session_id("20260929_120000_10.0.0.5_ab12") == \
+            "10-0-0-5"
 
     def test_ipv4_env_prefix_is_readable_and_legal(self):
         prefix = _env_prefix(_site_name_from_session_id("20260929_120000_10.0.0.5_ab12"))

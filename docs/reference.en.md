@@ -874,7 +874,7 @@ attached to the wrong one). In the saved script filename the `:` becomes `_`.
 - **Site name / env prefix stay readable for IP hosts**: the generated project name and env prefix
   come from the host in the session id. A normal domain uses its first label (`oa.example.com` → `oa`,
   env prefix `OA_`); an IPv4 host **keeps all four octets** with dots turned into dashes
-  (`172.16.105.44` → `172-16-105-44`, env prefix `172_16_105_44`) instead of collapsing to `172`,
+  (`10.0.0.5` → `10-0-0-5`, env prefix `10_0_0_5`) instead of collapsing to `10`,
   which is both unreadable and collides across devices on the same subnet;
 - **Auth generated from the method actually observed, per endpoint** (Basic / Bearer / Cookie
   handled separately): on one real server some endpoints can use `Authorization: Bearer` while
