@@ -1,9 +1,9 @@
-Web API Extractor — Store Edition License
+scry-mcp-gen — Store Edition License
 
 Version: 1.0
 Effective Date: 2026-09-29
 
-This document is the license for the **store edition** of the Web API Extractor project
+This document is the license for the **store edition** of the scry-mcp-gen project
 (the "skill") — the edition distributed through an AI-assistant skill store or marketplace.
 
 It is a **draft prepared for legal review**. It has not been reviewed or approved by a
@@ -24,11 +24,11 @@ edition (see clause 4).
 2. Attribution
 
 Copyright and attribution notices must be retained. If you redistribute, package, or
-present the skill, the project name **Web API Extractor** and the original source
+present the skill, the project name **scry-mcp-gen** and the original source
 reference must be preserved and must remain visible.
 
 If you modify the skill, any version you make available that includes your modification
-must clearly state that it is based on Web API Extractor, and must preserve the original
+must clearly state that it is based on scry-mcp-gen, and must preserve the original
 attribution information.
 
 3. Restrictions
@@ -101,12 +101,12 @@ deployment, obtain legal review before relying on this statement as the sole leg
 
 中文说明
 
-Web API Extractor — 商店版使用条款
+scry-mcp-gen — 商店版使用条款
 
 版本：1.0
 生效日期：2026-09-29
 
-本文件是 Web API Extractor 项目**商店版**（即通过 AI 助手技能商店 / 市场分发的版本，
+本文件是 scry-mcp-gen 项目**商店版**（即通过 AI 助手技能商店 / 市场分发的版本，
 下称「本技能」）的使用条款。
 
 本文件是**供法律审核的草稿**，未经律师审阅或确认，也不能替代正式法律文件。见第 9 条。
@@ -123,10 +123,10 @@ Web API Extractor — 商店版使用条款
 2. 署名
 
 必须保留版权与署名声明。如果您再分发、打包或展示本技能，必须保留并显示项目名称
-**Web API Extractor** 及原始来源说明。
+**scry-mcp-gen** 及原始来源说明。
 
 如果您修改了本技能，任何包含您修改内容、并向他人提供的版本，都必须明确说明其基于
-Web API Extractor，并保留原始署名信息。
+scry-mcp-gen，并保留原始署名信息。
 
 3. 限制
 

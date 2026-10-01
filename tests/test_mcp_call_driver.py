@@ -242,7 +242,7 @@ class TestTolerantExtraction:
     def test_banner_prefix_before_the_json(self, driver):
         """夹具：stdout 前面掺了启动横幅（FastMCP 那种）→ 仍要取到结果。"""
         banner = ("\n\n+---------------------------+\n|        FastMCP 4.0.10     |\n"
-                  "+---------------------------+\nServer: Web API Extractor\n")
+                  "+---------------------------+\nServer: scry-mcp-gen\n")
         body = banner + '{"jsonrpc":"2.0","id":1,"result":{"ok":true}}\n'
         assert driver.extract_result(body)["result"] == {"ok": True}
 

@@ -1,6 +1,6 @@
 # 免责声明与使用范围 / Disclaimer and Scope of Use
 
-本文件说明 Web API Extractor 的使用边界。**简体中文在前，English follows。**
+本文件说明 scry-mcp-gen 的使用边界。**简体中文在前，English follows。**
 
 ---
 
@@ -76,7 +76,7 @@
 
 # Disclaimer and Scope of Use (English)
 
-This document describes the usage boundary of Web API Extractor.
+This document describes the usage boundary of scry-mcp-gen.
 
 ## 1. Scope of intended use
 

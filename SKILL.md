@@ -4,7 +4,7 @@ description: Extract web API traffic through browser authentication and CDP capt
 install_method: upload
 ---
 
-# Web API Extractor — 操作手册 (Runbook)
+# scry-mcp-gen — 操作手册 (Runbook)
 
 让 Agent 在真实站点上完成「登录 → 操作 → 抓包 → 分析 → 生成 MCP」的闭环。
 

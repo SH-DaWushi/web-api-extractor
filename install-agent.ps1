@@ -18,8 +18,8 @@ if ($WithTests) {
 
 & $Python @bootstrapArgs
 if ($LASTEXITCODE -ne 0) {
-    throw "Web API Extractor environment bootstrap failed."
+    throw "scry-mcp-gen environment bootstrap failed."
 }
 
-Write-Host "Web API Extractor is ready for Agent import."
+Write-Host "scry-mcp-gen is ready for Agent import."
 Write-Host "Open this folder in VS Code; .vscode/mcp.json registers the stdio MCP server."

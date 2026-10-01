@@ -1,4 +1,4 @@
-Web API Extractor Project License
+scry-mcp-gen Project License
 
 Version: 1.0
 Effective Date: 2026-09-17
@@ -17,7 +17,7 @@ You may:
 
 If you modify, package, merge, fork, or redistribute this project, you must retain the original copyright and attribution notices, including the project name and the original source reference.
 
-Any modified distribution must clearly state that it is based on Web API Extractor and must preserve the original attribution information.
+Any modified distribution must clearly state that it is based on scry-mcp-gen and must preserve the original attribution information.
 
 3. Derived products and open-source requirement
 
@@ -61,7 +61,7 @@ This license is a practical user-facing usage boundary statement for this projec
 
 如果您修改、打包、合并、分叉或重新分发本项目，必须保留原始版权说明和项目来源声明。
 
-任何修改后的分发版本都必须明确说明其基于 Web API Extractor，并保留原始署名信息。
+任何修改后的分发版本都必须明确说明其基于 scry-mcp-gen，并保留原始署名信息。
 
 3. 衍生作品和开源要求
 

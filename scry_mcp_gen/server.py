@@ -71,7 +71,7 @@ try:
     instance.prune_dead()
 except Exception:                                      # noqa: BLE001
     pass
-mcp = FastMCP("Web API Extractor")
+mcp = FastMCP("scry-mcp-gen")
 login_manager = LoginManager(settings.auth_states_dir)
 capture_sessions: dict[str, CaptureSession] = {}
 
