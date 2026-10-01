@@ -1,13 +1,13 @@
 scry-mcp-gen — Store Edition License
 
-Version: 1.0
-Effective Date: 2026-09-29
+Version: 1.1
+Effective Date: 2026-10-01
 
-This document is the license for the **store edition** of the scry-mcp-gen project
-(the "skill") — the edition distributed through an AI-assistant skill store or marketplace.
+This document is the license for **scry-mcp-gen** as distributed through an
+AI-assistant skill store or marketplace (the "skill").
 
 It is a **draft prepared for legal review**. It has not been reviewed or approved by a
-lawyer, and it is not a substitute for a formal legal document. See clause 9.
+lawyer, and it is not a substitute for a formal legal document. See clause 8.
 
 1. Grant
 
@@ -18,14 +18,13 @@ You may:
 - Distribute the skill through the store or marketplace it was obtained from, on the
   terms that store requires of its listings.
 
-These rights are granted only under the terms of this document, and only for the store
-edition (see clause 4).
+These rights are granted only under the terms of this document.
 
 2. Attribution
 
 Copyright and attribution notices must be retained. If you redistribute, package, or
-present the skill, the project name **scry-mcp-gen** and the original source
-reference must be preserved and must remain visible.
+present the skill, the project name **scry-mcp-gen** must be preserved and must remain
+visible.
 
 If you modify the skill, any version you make available that includes your modification
 must clearly state that it is based on scry-mcp-gen, and must preserve the original
@@ -46,20 +45,7 @@ This license does not permit:
 Modifying the skill for your own internal use is allowed. Distributing that modified
 version to others is not, unless you have written permission.
 
-4. Relationship to the open-source edition
-
-This license covers the **store edition only**.
-
-The open-source edition, published in the public repository, is governed by that
-repository's `LICENSE` file — a separate document with non-commercial terms. The two
-editions have **different terms**. This license does not replace, relax, or waive the
-non-commercial restriction of the open-source edition.
-
-If what you received came from the store, this document governs it. If what you received
-came from the public repository, the repository's `LICENSE` governs it. Do not assume the
-same terms apply to both.
-
-5. No warranty
+4. No warranty
 
 The skill is provided "AS IS", without any express or implied warranties, including
 merchantability, fitness for a particular purpose, non-infringement, availability,
@@ -68,12 +54,12 @@ stability, or suitability for a specific task.
 The skill is provided without guarantee of correctness, completeness, security, or
 availability.
 
-6. Limitation of liability
+5. Limitation of liability
 
 The author is not liable for any damages arising from the use of, or inability to use,
 this skill, whether direct, indirect, incidental, or consequential.
 
-7. Compliance responsibility and acceptable use
+6. Compliance responsibility and acceptable use
 
 Users are solely responsible for compliance with all applicable laws, third-party terms,
 website terms of service, and privacy requirements when using the skill.
@@ -85,31 +71,30 @@ not control may violate law or the target's terms of service.
 See `DISCLAIMER.md` for the intended-use boundary and the credential-handling warning.
 That document describes the practical scope within which this license is granted.
 
-8. Termination
+7. Termination
 
 The rights granted in this document end automatically if you breach these terms. On
 termination you must stop using and distributing the skill, and remove the copies you
 control, except where applicable law requires otherwise.
 
-9. Reference statement
+8. Reference statement
 
 This license is a practical user-facing usage-boundary statement. It is intended to
-clarify the grant to store recipients, the attribution requirements, and the restrictions
-that keep the store edition separate from the open-source edition. It is a draft, not a
-lawyer-reviewed agreement. If a formal legal document is required for a particular
-deployment, obtain legal review before relying on this statement as the sole legal basis.
+clarify the grant to store recipients, the attribution requirements, and the
+restrictions that apply to the skill. It is a draft, not a lawyer-reviewed agreement.
+If a formal legal document is required for a particular deployment, obtain legal review
+before relying on this statement as the sole legal basis.
 
 中文说明
 
 scry-mcp-gen — 商店版使用条款
 
-版本：1.0
-生效日期：2026-09-29
+版本：1.1
+生效日期：2026-10-01
 
-本文件是 scry-mcp-gen 项目**商店版**（即通过 AI 助手技能商店 / 市场分发的版本，
-下称「本技能」）的使用条款。
+本文件是 **scry-mcp-gen** 通过 AI 助手技能商店 / 市场分发时的使用条款（下称「本技能」）。
 
-本文件是**供法律审核的草稿**，未经律师审阅或确认，也不能替代正式法律文件。见第 9 条。
+本文件是**供法律审核的草稿**，未经律师审阅或确认，也不能替代正式法律文件。见第 8 条。
 
 1. 授权
 
@@ -118,12 +103,12 @@ scry-mcp-gen — 商店版使用条款
 - 为该用途在本机保留并运行本技能。
 - 按该商店对条目的要求，通过获取本技能的那家商店 / 市场分发本技能。
 
-以上权利仅按本文件的条款授予，且仅适用于商店版（见第 4 条）。
+以上权利仅按本文件的条款授予。
 
 2. 署名
 
 必须保留版权与署名声明。如果您再分发、打包或展示本技能，必须保留并显示项目名称
-**scry-mcp-gen** 及原始来源说明。
+**scry-mcp-gen**。
 
 如果您修改了本技能，任何包含您修改内容、并向他人提供的版本，都必须明确说明其基于
 scry-mcp-gen，并保留原始署名信息。
@@ -138,28 +123,18 @@ scry-mcp-gen，并保留原始署名信息。
 
 为自己内部使用而修改本技能是允许的；把该修改版本分发给他人则不允许，除非获得书面许可。
 
-4. 与开源版的关系
-
-本条款仅覆盖**商店版**。
-
-公开发布在公共仓库中的开源版，由该仓库的 `LICENSE` 文件管辖 —— 那是一份包含非商业
-条款的独立文件。两个版本的条款**不同**；本条款不替代、不放宽、也不豁免开源版的非商业限制。
-
-您拿到的东西若来自商店，则由本文件管辖；若来自公共仓库，则由仓库的 `LICENSE` 管辖。
-请勿假设两者的条款相同。
-
-5. 无担保
+4. 无担保
 
 本技能按“现状”提供，不提供任何明示或暗示的保证，包括但不限于适销性、特定用途适用性、
 非侵权性、可用性、稳定性或特定任务适配性。
 
 本技能不保证其正确性、完整性、安全性或可用性。
 
-6. 责任限制
+5. 责任限制
 
 对于因使用或无法使用本技能而产生的任何损害（无论直接、间接、附带或后果性），作者不承担责任。
 
-7. 合规责任与可接受使用
+6. 合规责任与可接受使用
 
 使用者应自行负责在使用本技能时遵守适用法律、第三方条款、网站使用条款及隐私要求。
 
@@ -168,16 +143,16 @@ scry-mcp-gen，并保留原始署名信息。
 
 适用范围与凭据处理警告见 `DISCLAIMER.md`；该文件说明了本条款所授予权利的实务边界。
 
-8. 终止
+7. 终止
 
 若您违反本条款，本文件授予的权利自动终止。终止后您必须停止使用与分发本技能，并删除您
 控制范围内的副本，法律另有要求的除外。
 
-9. 说明
+8. 说明
 
-本声明用于明确授予商店接收者的权利、来源署名要求，以及把商店版与开源版区分开的限制。
-它是一份草稿，不是经律师审阅的协议。若某一具体场景需要正式法律约束，建议在依赖本声明
-作为唯一法律依据前进行法律审核。
+本声明用于明确授予商店接收者的权利、署名要求，以及适用于本技能的限制。它是一份草稿，
+不是经律师审阅的协议。若某一具体场景需要正式法律约束，建议在依赖本声明作为唯一法律依据
+前进行法律审核。
 
-Copyright (c) 2026 SH-DaWushi
+Copyright (c) 2026 the scry-mcp-gen authors
 All rights reserved.

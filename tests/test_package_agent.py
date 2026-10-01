@@ -165,6 +165,8 @@ class TestStorePackage:
         "SKILL.md",
         "DISCLAIMER.md",
         "LICENSE",                   # 由 LICENSE-STORE 改名而来
+        "README.md",                 # 由 README-STORE.md 改名而来
+        "README.en.md",
         "bootstrap.py",
         "bootstrap.ps1",             # 平台决定只支持 Windows，runbook 要引用它
         "start_server.py",
@@ -172,11 +174,21 @@ class TestStorePackage:
         "run_http.py",
         "scry_mcp_gen/server.py",
         "runbook/00-environment.md",
+        # 技术参考两版共享：SKILL.md、runbook/ 与代码文档字符串都引用它，
+        # 缺席会让那些引用全部悬空。
+        "docs/reference.md",
+        "docs/reference.en.md",
         "requirements.txt",
     ])
     def test_required_member_present(self, built_store, required):
         _, names = built_store
         assert required in names
+
+    def test_store_sources_are_renamed_not_shipped_verbatim(self, built_store):
+        """-STORE 后缀是仓库侧的名字，包里它们各自就叫正式名字。"""
+        _, names = built_store
+        for name in ("README-STORE.md", "README-STORE.en.md", "LICENSE-STORE"):
+            assert name not in names, f"{name} 必须以正式名字落包"
 
     def test_skill_md_is_at_package_root(self, built_store):
         _, names = built_store

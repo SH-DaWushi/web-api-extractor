@@ -30,6 +30,10 @@ README = (ROOT / "README.md").read_text(encoding="utf-8")
 REFERENCE = (ROOT / "docs" / "reference.md").read_text(encoding="utf-8")
 README_EN = (ROOT / "README.en.md").read_text(encoding="utf-8")
 REFERENCE_EN = (ROOT / "docs" / "reference.en.md").read_text(encoding="utf-8")
+# 维护者文档：不随任何分发包发出。仓库地址、打包清单、目录树、测试怎么跑都在这里 ——
+# 技术参考是两版共享的，那些内容放进去会随商店包发给商店用户（见 test_store_no_oss_leak.py）。
+PACKAGING = (ROOT / "PACKAGING.md").read_text(encoding="utf-8")
+PACKAGING_EN = (ROOT / "PACKAGING.en.md").read_text(encoding="utf-8")
 SKILL_MD = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 RUNBOOK_AUTH = (ROOT / "runbook" / "01-authentication.md").read_text(encoding="utf-8")
 RUNBOOK_ITERATE = (ROOT / "runbook" / "06-iterate.md").read_text(encoding="utf-8")
@@ -48,15 +52,30 @@ def _auth_state_windows(text: str, span: int = 250) -> list[str]:
 
 
 class TestInstallInstructions:
-    """安装路径必须真实存在。"""
+    """安装路径必须真实存在。
+
+    仓库地址与源码安装**只**出现在 README 与 PACKAGING.md 里：技术参考是两版共享、
+    要随商店包发出去的，写进去等于把商店用户导向开源版。
+    """
 
     def test_repo_url_present(self):
         """README 曾经连一个仓库地址都没有，唯一那个还是旧库的。"""
         assert REPO_URL in README
-        assert REPO_URL in REFERENCE
+        assert REPO_URL in PACKAGING
+
+    def test_reference_carries_no_repo_address(self):
+        """技术参考随商店包分发 —— 它里面不能有仓库地址。"""
+        for text in (REFERENCE, REFERENCE_EN):
+            assert "github.com" not in text
+            assert "web-api-extractor" not in text
+
+    def test_maintainer_docs_are_linked_from_readme(self):
+        """拆出去的维护者文档不能被孤立：README 必须指向它。"""
+        assert "(PACKAGING.md)" in README
+        assert "(PACKAGING.en.md)" in README_EN
 
     def test_old_repo_identifier_gone(self):
-        for text in (README, REFERENCE):
+        for text in (README, PACKAGING):
             assert "shdawushi-dotcom" not in text
             assert "WebAPIExtractor.git" not in text
 
@@ -64,10 +83,10 @@ class TestInstallInstructions:
         """该发行版不在 PyPI 上，不能教用户这么装（`-`/`_` 两种写法都挡）。"""
         pattern = re.compile(r"pip\s+install\s+web[-_]?api[-_]?extractor\b")
         assert not pattern.search(README)
-        assert not pattern.search(REFERENCE)
+        assert not pattern.search(PACKAGING)
 
     def test_source_install_documented(self):
-        assert "pip install -e ." in REFERENCE
+        assert "pip install -e ." in PACKAGING
 
     def test_readme_says_where_to_get_the_zip(self):
         """README 让使用者「把 zip 拖进技能页」，就必须给出 zip 的下载落点。
@@ -180,18 +199,22 @@ class TestToolCount:
 
 
 class TestFileInventory:
-    """目录树注释里的文件数必须等于磁盘实际数 —— 这类数字最容易漏改。"""
+    """目录树注释里的文件数必须等于磁盘实际数 —— 这类数字最容易漏改。
+
+    目录树在 PACKAGING.md 里：它列的是仓库结构（含 tests/、打包脚本），
+    而技术参考要随商店包发给商店用户，那些内容不能进去。
+    """
 
     def test_tests_dir_count_matches_disk(self):
-        claimed = re.findall(r"tests/\s+#\s*pytest 套件（(\d+) 个文件）", REFERENCE)
+        claimed = re.findall(r"tests/\s+#\s*pytest 套件（(\d+) 个文件）", PACKAGING)
         actual = len(list((ROOT / "tests").glob("*.py")))
-        assert claimed, "reference 的目录树里找不到 tests/ 的文件数声明"
-        assert all(int(c) == actual for c in claimed), f"reference 声称 {claimed}，实际 {actual}"
+        assert claimed, "PACKAGING.md 的目录树里找不到 tests/ 的文件数声明"
+        assert all(int(c) == actual for c in claimed), f"PACKAGING.md 声称 {claimed}，实际 {actual}"
 
     def test_packaging_scripts_both_documented(self):
-        """加了 .py 版打包脚本后，reference 不能只讲 .ps1（否则非 Windows 找不到出路）。"""
+        """加了 .py 版打包脚本后，文档不能只讲 .ps1（否则非 Windows 找不到出路）。"""
         for name in ("package-agent.py", "package-agent.ps1"):
-            assert name in REFERENCE, f"reference 未提到 {name}"
+            assert name in PACKAGING, f"PACKAGING.md 未提到 {name}"
 
 
 class TestCoverageClaimsMatchTests:
@@ -211,19 +234,19 @@ class TestCoverageClaimsMatchTests:
 
     def test_server_tool_layer_claim_matches_reality(self):
         if self._imports("server"):
-            assert "工具层本身无测试" not in REFERENCE
-            assert "从不 import" not in REFERENCE
+            assert "工具层本身无测试" not in PACKAGING
+            assert "从不 import" not in PACKAGING
 
     def test_iterate_chain_claim_matches_reality(self):
         if (self.TESTS / "test_iterate_chain.py").exists():
-            for text in (REFERENCE, RUNBOOK_ITERATE):
+            for text in (PACKAGING, RUNBOOK_ITERATE):
                 assert "没有测试覆盖" not in text
                 assert "只有实现、没有验证" not in text
 
     def test_documented_untested_modules_really_are_untested(self):
-        """reference 点名的「无测试」模块，不能其实已经被 import 了。"""
-        for module in re.findall(r"`(\w+)\.py`(?:`\s*/\s*`\w+`)*\s*(?:均)?无测试", REFERENCE):
-            assert not self._imports(module), f"reference 说 {module}.py 无测试，实际有测试"
+        """文档点名的「无测试」模块，不能其实已经被 import 了。"""
+        for module in re.findall(r"`(\w+)\.py`(?:`\s*/\s*`\w+`)*\s*(?:均)?无测试", PACKAGING):
+            assert not self._imports(module), f"PACKAGING.md 说 {module}.py 无测试，实际有测试"
 
 
 class TestProbeCriteriaInRunbook:
@@ -304,7 +327,8 @@ class TestDocsMatchCodeInventory:
 
     def test_dead_module_not_documented(self):
         """login_detector.py 是死代码（全仓无调用点），不该出现在项目结构里。"""
-        assert "login_detector" not in REFERENCE
+        for text in (REFERENCE, PACKAGING):
+            assert "login_detector" not in text
 
     def test_no_site_profiles_bundled(self):
         """文档称「仓库不内置任何档案」，这条断言的是文档claim本身成立。
@@ -352,20 +376,20 @@ class TestEnglishDocsMirrorChinese:
 
     def test_repo_url_present(self):
         assert REPO_URL in README_EN
-        assert REPO_URL in REFERENCE_EN
+        assert REPO_URL in PACKAGING_EN
 
     def test_old_repo_identifier_gone(self):
-        for text in (README_EN, REFERENCE_EN):
+        for text in (README_EN, PACKAGING_EN):
             assert "shdawushi-dotcom" not in text
             assert "WebAPIExtractor.git" not in text
 
     def test_no_unpublished_pip_install(self):
         pattern = re.compile(r"pip\s+install\s+web[-_]?api[-_]?extractor\b")
         assert not pattern.search(README_EN)
-        assert not pattern.search(REFERENCE_EN)
+        assert not pattern.search(PACKAGING_EN)
 
     def test_source_install_documented(self):
-        assert "pip install -e ." in REFERENCE_EN
+        assert "pip install -e ." in PACKAGING_EN
 
     def test_readme_says_where_to_get_the_zip(self):
         if "zip" in README_EN:
@@ -406,17 +430,17 @@ class TestEnglishDocsMirrorChinese:
         assert all(c == actual for c in claims), f"英文文档声称 {claims}，实际注册 {actual}"
 
     def test_tests_dir_count_matches_disk(self):
-        claimed = re.findall(r"tests/\s+#\s*pytest suite \((\d+) files\)", REFERENCE_EN)
+        claimed = re.findall(r"tests/\s+#\s*pytest suite \((\d+) files\)", PACKAGING_EN)
         actual = len(list((ROOT / "tests").glob("*.py")))
-        assert claimed, "英文 reference 的目录树里找不到 tests/ 的文件数声明"
-        assert all(int(c) == actual for c in claimed), f"英文 reference 声称 {claimed}，实际 {actual}"
+        assert claimed, "英文 PACKAGING 的目录树里找不到 tests/ 的文件数声明"
+        assert all(int(c) == actual for c in claimed), f"英文 PACKAGING 声称 {claimed}，实际 {actual}"
 
     def test_packaging_scripts_both_documented(self):
         for name in ("package-agent.py", "package-agent.ps1"):
-            assert name in REFERENCE_EN, f"英文 reference 未提到 {name}"
+            assert name in PACKAGING_EN, f"英文 PACKAGING 未提到 {name}"
 
     def test_dead_module_not_documented(self):
-        assert "login_detector" not in REFERENCE_EN
+        assert "login_detector" not in PACKAGING_EN
 
     def test_readme_links_english_reference(self):
         """英文 README 必须把读者导向**英文**技术文档。

@@ -87,85 +87,10 @@ engine) is set up by the agent (see "Environment setup" below).
 Inside the skill folder, `SKILL.md`, `runbook/`, `bootstrap.*`, `start_server.py` and `mcp_call.py`
 are all files **consumed by the agent**; `docs/reference.en.md` (this file, with the Chinese
 original at `docs/reference.md`) is the human-facing
-technical documentation. `scry-mcp-gen-agent.zip` is built by `package-agent.py`
-(cross-platform) or `package-agent.ps1` (Windows) — the two scripts have identical manifests and
-identical output, so either will do; the contents match the skill folder.
-**Official packages are attached to GitHub Releases** (from `v0.1.0` onward, each tag carries its own
-zip), so users can just download one instead of pulling the repository and packaging it themselves.
+technical documentation.
 
-**B. Working from source (doing it yourself / secondary development)** — everything below this point
-is for that audience. **This project is not published to PyPI, so you must work from source.**
-
-```bash
-git clone https://github.com/SH-DaWushi/web-api-extractor.git
-cd web-api-extractor
-```
-
-Editable install as a Python library:
-
-```bash
-pip install -e .
-python -m playwright install chromium
-```
-
-The entry points are then `scry-mcp-gen` (stdio, see `[project.scripts]` in `pyproject.toml`)
-and `python -m scry_mcp_gen serve-http`; the repository-local driver scripts (`mcp_call.py`,
-`start_server.py`, …) are not in the package. The runtime dependencies are only
-`fastmcp / httpx / playwright`; the test runner (`pytest` / `pytest-asyncio`) is **optional** —
-`pip install -e .` does **not** install it, use `pip install -e ".[test]"` (equivalent to
-`pip install -r requirements-dev.txt`), otherwise `asyncio_mode=auto` is silently ignored
-(see "Tests").
-
-### Editions and licensing
-
-This project ships as **two editions with different terms** — **the `LICENSE` inside the package you
-actually received is the one that applies**:
-
-| Edition | Where it comes from | Terms |
-|---|---|---|
-| Open-source | this repository, the GitHub Releases skill package | the repository's root `LICENSE` (custom, **non-commercial**) |
-| Store | the package distributed through a skill store | the `LICENSE` inside that package, which is `LICENSE-STORE` (a custom **store-distribution license**) |
-
-The store edition grants store listing and end-user use (including internal business purposes), retains
-attribution and disclaimers, forbids resale, redistribution outside that store, sublicensing and
-distributing modified versions (private modification is fine), and does **not** waive the open-source
-edition's non-commercial restriction.
-
-The editions differ in more than the license — **what actually goes into a package differs too**. The
-authoritative source is `INCLUDE` (open-source) plus the `--store` trimming logic (`STORE_EXCLUDE` /
-`STORE_ADD` / `STORE_RENAME`) in `package-agent.py`, mirrored item-for-item by `package-agent.ps1`
-(see `tests/test_package_agent.py`):
-
-- **Open-source** packages the top-level items of `INCLUDE`: `pyproject.toml`, `requirements.txt`,
-  `requirements-dev.txt`, `README.md` / `README.en.md`, `SKILL.md`, `docs/`, `runbook/`, `LICENSE`,
-  `DISCLAIMER.md`, `bootstrap.py` / `bootstrap.ps1` / `bootstrap.sh`, `install-agent.ps1`,
-  `start_server.py`, `run_http.py`, `mcp_call.py`, `.vscode/`, `scry_mcp_gen/`, `tests/`.
-- **Store** takes that list and **removes**: `tests/` (the whole test suite), `pyproject.toml`,
-  `requirements-dev.txt`, `.vscode/`, `bootstrap.sh`, `install-agent.ps1`, and `LICENSE`; it **only
-  adds** `LICENSE-STORE`, which is **renamed to `LICENSE` inside the package** (a store package may
-  carry only one license file, and it must be the store one).
-- **Neither** distribution contains `package-agent.py` / `package-agent.ps1` (the packaging scripts
-  themselves) or `.gitattributes` — they are not in `INCLUDE`, so they are repository-only files, not
-  something the store edition specifically trimmed.
-- **What this means in practice**: the store package has **no `tests/`**, no test dependencies
-  (`requirements-dev.txt`) and no packaging metadata (`pyproject.toml`). So **to run the tests from a
-  package, use the open-source edition** (or work from the repository source); the store package only
-  ships what is needed at runtime.
-- **License and disclaimer files**: `DISCLAIMER.md` is **bundled in both editions** (it states no
-  license terms, so it holds for both). The license file differs: the open-source package carries the
-  repository's root `LICENSE` (non-commercial), while the store package carries exactly one `LICENSE`
-  (whose content is `LICENSE-STORE`).
-
-Build with:
-
-- open-source edition: `python package-agent.py` (or its PowerShell equivalent, `package-agent.ps1`)
-- store edition: `python package-agent.py --store` (PowerShell: add the `-Store` switch)
-
-> Both licenses are **self-authored usage-boundary statements and have not been reviewed by a lawyer** —
-> obtain legal review before relying on either as the sole legal basis for a specific deployment.
-> Please also read the disclaimer (scope of use, credential handling warning, no warranty, limitation of
-> liability) — **both editions' packages bundle `DISCLAIMER.md`**, and the repository root carries the
-> same file.
+**B. Working from source (doing it yourself / secondary development)** — environment setup, starting
+the server, and command-line driving are covered from this point on.
 
 ### Environment setup
 
@@ -186,10 +111,10 @@ bash ./bootstrap.sh --with-tests                                      # unsuppor
 > directory and having to re-download Chromium. If an older deployment still has a legacy `.venv` in
 > the skill folder, the bootstrap **reuses it** (and says so) instead of creating a second one.
 
-> **macOS / Linux are not supported and have not been tested.** `bootstrap.sh` is still kept in the
-> repository (in the repository root, alongside `bootstrap.ps1`), but it is **provided only as a
-> courtesy, unverified** — it is a thin POSIX wrapper around `bootstrap.py`. The supported bootstrap
-> paths are `bootstrap.py` / `bootstrap.ps1`; see "Platform matrix" for the full platform story.
+> **macOS / Linux are not supported and have not been tested.** `bootstrap.sh` is **provided only as
+> a courtesy, unverified** — it is a thin POSIX wrapper around `bootstrap.py`. The supported
+> bootstrap paths are `bootstrap.py` / `bootstrap.ps1`; see "Platform matrix" for the full platform
+> story.
 
 If the environment is already set up, just run the check:
 
@@ -816,7 +741,7 @@ attached to the wrong one). In the saved script filename the `:` becomes `_`.
   **fetch plan** (source URL + field path), which is the feature itself, not metadata (registry.json
   and analysis.json still keep the whole record).
 - **Site profiles**: the optional `scry_mcp_gen/site_profiles/` lets known sites apply semantic
-  tool naming and Chinese descriptions; the repository ships no profiles, and other sites fall back
+  tool naming and Chinese descriptions; no profiles ship with this project, and other sites fall back
   to generic derivation.
 
 ## Capabilities of the generated sub-MCP
@@ -981,7 +906,7 @@ is a tri-state boolean (`True` / `False` / `None`) and `detect_behaviour_switch`
 the two **sets of structure signatures** ("carrying it with this value" vs "not carrying it / carrying
 another value") are equal — the per-value → structure mapping is **never persisted**, so the generator
 has nothing to look up. Getting there requires the analysis phase to emit "each observed value → the
-response structure observed with it" into the parameter evidence. Until then this repository **does not
+response structure observed with it" into the parameter evidence. Until then this project **does not
 guess** which value is right (guessing would swap "silently wrong data" for "another wrong value baked
 in") and stops at "do not bake + documented, and required only when it was actually measured".
 
@@ -1117,92 +1042,6 @@ supported and untested** — the concrete reasons are:
 | **Support level** | **Full (the only supported platform)** | Not supported | Not supported |
 
 `pyproject.toml`'s platform classifier and the README badge both declare Windows only, consistent
-with the table above. `bootstrap.sh` remains in the repository but is **courtesy-only and
-unverified**: a thin POSIX wrapper around `bootstrap.py`. macOS / Linux are not supported — the
-supported bootstrap paths are `bootstrap.py` / `bootstrap.ps1`.
-
----
-
-## Project structure
-
-```
-web-api-extractor/
-├─ SKILL.md                     # Agent runbook index (follow step by step)
-├─ README.md / README.en.md     # Human entry point: what this is, how to get started
-├─ docs/reference.md            # Technical reference (Chinese)
-├─ docs/reference.en.md         # This file
-├─ runbook/                     # SKILL's per-step modules, loaded on demand
-│                               #   00 env / 01 auth / 02 capture / 03 analyze / 04 crypto
-│                               #   05 generate / 06 iterate / 90 reference / 99 troubleshooting
-├─ bootstrap.py / .ps1 / .sh    # Environment bootstrap (pure-Python immune to restricted envs; .sh unsupported, unverified)
-├─ start_server.py              # The recommended way to start the HTTP service (escapes the shell job object)
-├─ run_http.py                  # Equivalent HTTP launcher (do not run it as a background task)
-├─ mcp_call.py                  # MCP tool driver (@file / stdin arguments, 404 self-healing)
-├─ install-agent.ps1            # Install deps + Chromium (for agent import)
-├─ package-agent.py / .ps1      # Package into a distributable zip (identical manifests, identical output)
-├─ pyproject.toml               # Packaging metadata (incl. license / readme / classifiers)
-├─ requirements.txt             # Runtime dependencies (fastmcp / httpx / playwright)
-├─ requirements-dev.txt         # Test dependencies (-r requirements.txt + pytest / pytest-asyncio)
-├─ LICENSE                      # Custom terms of use (not SPDX / OSI)
-├─ .gitignore / .gitattributes  # Ignore runtime artifacts; pin line endings (*.sh must be LF)
-├─ .vscode/mcp.json             # Registers this server as a stdio MCP server (no absolute local paths)
-├─ tests/                       # pytest suite (37 files)
-└─ scry_mcp_gen/
-   ├─ __main__.py               # CLI: doctor | serve-http | (default) stdio
-   ├─ server.py                 # MCP server and tool registration
-   ├─ auth.py                   # Login flows (user-confirmed completion, never automatic) + measured login mode on disk
-   ├─ capture.py                # Playwright/CDP capture
-   ├─ analyzer.py               # Parameterization / noise tagging / login detection / "can we POST?" two-layer verdict
-   ├─ crypto_analyzer.py        # Encryption detection + PEM public-key extraction
-   ├─ generator.py              # Registry-driven project generation (incl. interactive-login artifacts)
-   ├─ project.py                # Registry single source of truth (diff / merge / export)
-   ├─ redaction.py / bodies.py  # Redaction (preserving shape metadata) / request body parsing
-   ├─ dialog.py                 # Native OS confirmation dialog (shared by login and capture)
-   ├─ doctor.py                 # Environment self-check
-   ├─ domain.py / probe.py / proxy_env.py
-   ├─ audit.py / storage.py / config.py
-   └─ site_profiles/            # Site profiles (optional, none ship in the repository)
-```
-
----
-
-## Tests
-
-```bash
-# pytest config lives in pyproject.toml (testpaths + asyncio_mode=auto)
-uv run --with pytest --with pytest-asyncio --with httpx --with playwright \
-       --with fastmcp python -m pytest tests -q
-
-# Or if the environment is already set up:
-python -m pytest tests -q
-```
-
-Three things to note:
-
-- **Test and runtime dependencies are split**: `requirements.txt` holds only runtime dependencies
-  (`fastmcp` / `httpx` / `playwright`), while `pytest` / `pytest-asyncio` live in
-  `requirements-dev.txt` (i.e. `pyproject.toml`'s `[project.optional-dependencies].test`). **The
-  bootstrap installs runtime dependencies only by default**; to run the tests, opt in explicitly with
-  `python bootstrap.py --with-tests`, `pip install -r requirements-dev.txt`, or
-  `pip install -e ".[test]"`. Without a test runner, `asyncio_mode=auto` is silently ignored and every
-  async test fails.
-- The suite is unit-level and **never launches a browser**.
-- **What the tests do not cover** (stated plainly — do not read "untested" as "fine"):
-  - the **session and capture** tools in `server.py` (probe / login / capture / analyze /
-    update_endpoint / extract_crypto) still have no tests — they need a real browser; **the 4
-    project tools and doctor are covered** (`tests/test_iterate_tools.py`, `tests/test_doctor.py`,
-    which point the data directory at a temporary directory before importing `server.py` so the
-    local `~/.scry` is untouched);
-  - the iteration chain (`runbook/06-iterate.md`), user-mode isolation, and `locked` rejection are
-    covered by `tests/test_iterate_chain.py` (previously uncovered; added in this round);
-  - `test_proxy_env.py` has one POSIX-only case that is skipped on Windows (expected).
-  - the capture browser's **proxy mode** (`auto` by default: start direct, fall back to the system
-    proxy once on a proxy-shaped failure / explicit `direct` and `system` do not fall back / the
-    diagnosis when both fail / a clear error for an invalid setting) is covered by
-    `tests/test_capture_proxy.py`: launch arguments and the fallback sequence are read off a **fake
-    playwright**, so the suite still **never launches a browser**.
-  - `mcp_call.py`'s **output encoding** is covered by `tests/test_mcp_call_driver.py`: the non-TTY
-    case runs a real subprocess pipe and asserts **strict UTF-8 decoding**; the real-console cases
-    call `AllocConsole()` to create a hidden real console, point a child process's stdout at
-    `CONOUT$`, run the actual output path, and read back the **characters in the screen buffer**
-    (asserting what a human would see is Chinese). Those skip on non-Windows.
+with the table above. `bootstrap.sh` is **courtesy-only and unverified**: a thin POSIX wrapper around
+`bootstrap.py`. macOS / Linux are not supported — the supported bootstrap paths are
+`bootstrap.py` / `bootstrap.ps1`.

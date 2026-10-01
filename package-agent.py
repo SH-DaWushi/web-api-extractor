@@ -13,8 +13,13 @@ start_server.py / mcp_call.py，SKILL.md 的硬规则也要求用 start_server.p
 两个版本（开源版 / 商店版）的清单口径不同：
 - 默认 = 开源版，逐项与 package-agent.ps1 的 $include 一致；
 - `--store` = 商店版，在默认清单上做机械变换（见 STORE_INCLUDE），逐项与 .ps1 的
-  $storeInclude 一致。商店版把 LICENSE-STORE 落成包内的 LICENSE —— 商店包只能带
-  一份授权文件，且必须是商店版那份，不能是仓库里的非商业 LICENSE。
+  $storeInclude 一致。商店版把 LICENSE-STORE / README-STORE*.md 落成包内的
+  LICENSE / README*.md，并整体去掉 docs/ —— 商店包只能带一份授权；而 README 与
+  技术参考里写着公开仓库地址与「另有开源版」的说明，那些是**不能**发给商店用户的。
+
+因此商店版不是「开源版裁掉几个开发文件」，而是**一份独立文档集**：
+代码（scry_mcp_gen/）两边逐字节相同，README / LICENSE / 技术参考各用各的。
+tests/test_store_no_oss_leak.py 会拿真包扫一遍，确保商店包内不出现任何公开仓库线索。
 
 INCLUDE / STORE_INCLUDE 必须与 package-agent.ps1 的 $include / $storeInclude 一致
 （两者都对使用者分发，tests/test_package_agent.py 会逐项比对，防止只改一边）。
@@ -52,9 +57,13 @@ INCLUDE = (
 )
 
 # 商店版在默认清单上做的变换，三份数据都必须与 package-agent.ps1 对应数组一致。
-# STORE_EXCLUDE 是「开发用 / 平台不支持」的项，外加 LICENSE：
-#   LICENSE 不是被丢掉，而是由 LICENSE-STORE 顶替（见 STORE_RENAME / STORE_ADD），
-#   否则商店包会同时带两份授权文件、且其中一份是仓库的非商业 LICENSE。
+# STORE_EXCLUDE 是「开发用 / 平台不支持」的项，外加三组**被顶替**的项：
+#   LICENSE / README.md / README.en.md 不是被丢掉，而是由商店版那三份顶替
+#     （见 STORE_RENAME / STORE_ADD），否则商店包会同时带两份授权或两份 README。
+# docs/ 两版都带：docs/reference.md 被 SKILL.md、runbook/ 与**代码文档字符串**引用
+#   （后两者不能按版本分叉），所以它必须随包分发，也因此**不得**出现仓库地址、
+#   打包清单或「另有一个版本」这类说法 —— 那些搬去 PACKAGING.md（不在 INCLUDE 里，
+#   天然只属于仓库）。由 tests/test_store_no_oss_leak.py 扫描强制。
 # 注意 DISCLAIMER.md 两个版本都带，故只在 INCLUDE 里出现一次；**绝不能**再放进
 #   STORE_ADD —— STORE_INCLUDE = INCLUDE−STORE_EXCLUDE + STORE_ADD 是简单拼接，
 #   同一项出现两次会让商店 zip 里出现同名重复成员（各实现解包行为不一）。
@@ -68,11 +77,17 @@ STORE_EXCLUDE = frozenset({
     ".gitattributes",
     "requirements-dev.txt",
     "pyproject.toml",
-    "LICENSE",
+    "LICENSE",             # 由 LICENSE-STORE 顶替
+    "README.md",           # 由 README-STORE.md 顶替
+    "README.en.md",        # 由 README-STORE.en.md 顶替
 })
-STORE_ADD = ("LICENSE-STORE",)
-# 商店版包内改名：LICENSE-STORE → LICENSE（商店包只能有一份授权文件）
-STORE_RENAME = {"LICENSE-STORE": "LICENSE"}
+STORE_ADD = ("LICENSE-STORE", "README-STORE.md", "README-STORE.en.md")
+# 商店版包内改名（商店包里它们各自那份就叫正式名字，不带 -STORE 后缀）
+STORE_RENAME = {
+    "LICENSE-STORE": "LICENSE",
+    "README-STORE.md": "README.md",
+    "README-STORE.en.md": "README.en.md",
+}
 
 # 开源版清单减去商店排除项，再接上商店附加项（保持顺序，便于与 .ps1 逐项比对）
 STORE_INCLUDE = tuple([item for item in INCLUDE if item not in STORE_EXCLUDE] + list(STORE_ADD))

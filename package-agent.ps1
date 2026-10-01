@@ -32,15 +32,16 @@ $include = @(
     "tests"
 )
 
-# 商店版去掉开发用 / 平台不支持的项，再附上商店授权（LICENSE-STORE → LICENSE）。
-# 注意 LICENSE 不在商店清单里：它由 LICENSE-STORE 顶替（见 $rename），
-# 商店包只能带一份授权文件，且必须是商店版那份（不是仓库的非商业 LICENSE）。
+# 商店版去掉开发用 / 平台不支持的项，再附上商店版自己那三份文件。
+# LICENSE / README.md / README.en.md 都**不在**商店清单里：它们由 -STORE 那三份顶替
+#   （见 $rename）—— 商店包只能带一份授权，而 README 里写着公开仓库地址与
+#   「另有开源版」的说明，那些不能发给商店用户。
+# docs/ 两版都带：docs/reference.md 被 SKILL.md、runbook/ 与**代码文档字符串**引用，
+#   必须随包分发，也因此不得含仓库线索（打包清单与目录树在 PACKAGING.md，它不在 $include 里）。
 # DISCLAIMER.md 两个版本都带，来自 $include（不在 $storeInclude 里重复列一次）。
 # bootstrap.ps1 则**保留** —— 本平台只支持 Windows，runbook 的 Windows 路径要引用它。
 $storeInclude = @(
     "requirements.txt",
-    "README.md",
-    "README.en.md",
     "SKILL.md",
     "docs",
     "runbook",
@@ -51,11 +52,17 @@ $storeInclude = @(
     "run_http.py",
     "mcp_call.py",
     "scry_mcp_gen",
-    "LICENSE-STORE"
+    "LICENSE-STORE",
+    "README-STORE.md",
+    "README-STORE.en.md"
 )
 
-# 商店版包内改名：LICENSE-STORE → LICENSE
-$rename = @{ "LICENSE-STORE" = "LICENSE" }
+# 商店版包内改名：这三份在包里各自就叫正式名字（不带 -STORE 后缀）
+$rename = @{
+    "LICENSE-STORE" = "LICENSE"
+    "README-STORE.md" = "README.md"
+    "README-STORE.en.md" = "README.en.md"
+}
 
 # 绝对路径直接用；Join-Path 会把 "D:\repo" + "C:\out\x.zip" 拼成一个坏路径。
 if ([string]::IsNullOrEmpty($Output)) {

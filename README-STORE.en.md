@@ -2,7 +2,7 @@
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
-![License](https://img.shields.io/badge/license-custom%20(per--edition)-orange)
+![License](https://img.shields.io/badge/license-custom-orange)
 
 **English** | [简体中文](README.md)
 
@@ -48,15 +48,11 @@ any technical terminology.
 
 Two ways; pick one — **you do not install any library, and you do not run any command**:
 
-- **Drop it into the skills settings page** — drag the skill folder (or the
-  `scry-mcp-gen-agent.zip` import package) into your AI assistant's **Skills** settings page.
-  The exact entry point differs between clients, but every one of them keeps it under skill settings.
-- **Drop it into the conversation and let the agent install it** — drag the skill folder (or the zip)
-  into the conversation and tell the AI "please install this skill for me".
-
-> Where does the zip come from? Download `scry-mcp-gen-agent.zip` from the
-> [Releases page](https://github.com/SH-DaWushi/web-api-extractor/releases/latest) — it is the skill
-> folder itself, packaged. Identical contents; you just do not have to pull the whole repository.
+- **Install it from the skill store** — find **scry-mcp-gen** in your AI assistant's **Skills**
+  store and install it. The exact entry point differs between clients, but every one of them keeps
+  it under skill settings.
+- **Drop it into the conversation and let the agent install it** — drag the skill folder into the
+  conversation and tell the AI "please install this skill for me".
 
 Once installed, **scry-mcp-gen** appears in your skill list. Your AI assistant now has a new
 capability: **walking through a login with you in a real browser, recording what you do, and
@@ -64,8 +60,7 @@ turning it into tools.**
 
 > The first run installs a small runtime (including a browser engine), and **the AI does all of it** —
 > you do not need to care. If you really do want to do it by hand (or set it up for a colleague),
-> the environment setup and start commands are in the
-> [technical documentation's "Installation forms" and "Starting the server"](https://github.com/SH-DaWushi/web-api-extractor/blob/main/docs/reference.en.md).
+> the environment setup and start commands are in `runbook/00-environment.md` inside the skill.
 
 ### Step 2 · Tell it what you want, in plain conversation
 
@@ -108,8 +103,7 @@ A tool set you can **keep using and keep extending**:
 ## What it can and cannot do
 
 > This is the overview for judging "can I use this?". The exact rules and the code behind each
-> judgement are in the technical documentation's "Capability boundaries (what it cannot do)"
-> and "Platform matrix" chapters.
+> judgement are in `runbook/90-reference.md` inside the skill.
 
 ### It can
 
@@ -204,7 +198,7 @@ You do not need to follow what happens in between — that is the AI's job.
 
 > For the technical implementation (endpoint normalization, the exact scope of redaction,
 > encryption detection, generator capabilities, environment variables, the full list of 21 tools,
-> the platform matrix, and the known boundaries), see **[Learn more](#learn-more)** at the end.
+> the platform matrix, and the known boundaries), see `runbook/90-reference.md` inside the skill.
 
 ---
 
@@ -213,84 +207,61 @@ You do not need to follow what happens in between — that is the AI's job.
 | Question | Answer |
 |---|---|
 | Do I need to know how to program? | No. It is all conversation plus browser interaction. |
-| Are my account and password safe? | **In the session file the cookies are plaintext and the account/password are stored encrypted** (a JSON file under the local `auth_states/` directory; `http_login` encrypts them with Windows DPAPI into a `secrets_enc` field, decryptable only by the same Windows user on the same machine, and if DPAPI is unavailable nothing is written rather than plaintext; a legacy file may stay plaintext until it is read), so it can only stay on your own computer — **do not commit it, sync it, screenshot it, or share it**. During capture, redaction covers the **request side**: a JSON/form field whose name looks like a credential (including synonyms such as `password` / `pass` / `pin` / `otp` / `token` / `api_key`, and form bodies with valueless control segments) has its value replaced with `***`, and `Authorization` / token-bearing headers are masked too; but **URLs and response bodies are not redacted**, and request bodies that are neither JSON nor form-encoded (`multipart`, XML, plain text) are not redacted either. In the generated project credentials are stored encrypted (Windows only). Full details in the technical documentation's "Security design" (see [Learn more](#learn-more) at the end). |
+| Are my account and password safe? | **In the session file the cookies are plaintext and the account/password are stored encrypted** (a JSON file under the local `auth_states/` directory; `http_login` encrypts them with Windows DPAPI into a `secrets_enc` field, decryptable only by the same Windows user on the same machine, and if DPAPI is unavailable nothing is written rather than plaintext; a legacy file may stay plaintext until it is read), so it can only stay on your own computer — **do not commit it, sync it, screenshot it, or share it**. During capture, redaction covers the **request side**: a JSON/form field whose name looks like a credential (including synonyms such as `password` / `pass` / `pin` / `otp` / `token` / `api_key`, and form bodies with valueless control segments) has its value replaced with `***`, and `Authorization` / token-bearing headers are masked too; but **URLs and response bodies are not redacted**, and request bodies that are neither JSON nor form-encoded (`multipart`, XML, plain text) are not redacted either. In the generated project credentials are stored encrypted (Windows only). Full details in `DISCLAIMER.md` and `runbook/90-reference.md` inside the skill. |
 | Is any data uploaded to the cloud? | No. Everything is recorded in a data directory on your own computer (`~/.scry`). |
 | Which systems are supported? | Any system you can log into and operate in a browser — including internal systems behind CAPTCHAs, SMS verification, or single sign-on (those go through interactive authorization; **an expired session needs one login by you**, it will not renew automatically — the generated project opens the browser window for that). |
 | How complex a feature can it handle? | It depends on what you clicked through in the browser. File upload, GraphQL, and binary interfaces are out of scope; WebSocket frame contents are recorded in the capture but are not turned into tools — see "It cannot" above. |
 | Can I share the generated tools? | Yes. Hand the distribution package to a colleague; they can call the tools but cannot modify the tool set. |
 | What if the system changes? | Walk through it again and have the AI merge the differences. No redo. |
 | Will the data keep growing? | Yes. The capture log only appends and is never cleaned automatically; long sessions need manual cleanup of the data directory. |
-| Can I use it on non-Windows? | **No — not supported.** This project supports Windows only: credential encryption relies on Windows DPAPI, and capture and interactive login must open a real desktop browser window. macOS / Linux are neither supported nor tested. See the technical documentation's "Platform matrix". |
+| Can I use it on non-Windows? | **No — not supported.** This skill supports Windows only: credential encryption relies on Windows DPAPI, and capture and interactive login must open a real desktop browser window. macOS / Linux are neither supported nor tested. |
 | Is this a Skill or an MCP server? | You do not need to distinguish. Underneath it is an MCP server; on top it is a skill your agent can invoke — import the skill and you are done. |
+| An endpoint will not open, or a tool errors out. | See `runbook/99-troubleshooting.md` inside the skill (the troubleshooting quick reference). |
 
 ---
 
 ## Learn more
 
-The section above covers "what you get". **Technical details, capability boundaries, and security
-semantics** all live in the technical documentation:
-
-📄 **[docs/reference.en.md](https://github.com/SH-DaWushi/web-api-extractor/blob/main/docs/reference.en.md)**
-— the `docs/reference.en.md` inside the skill folder; the same file.
-
-| What you want to know | Chapter |
+| What you want to know | Where to look |
 |---|---|
-| What the 21 tools are and what arguments each takes | "Tool list", "Tool argument quick reference" |
-| Which systems / features are out of scope | "Capability boundaries (what it cannot do)" |
-| How far Windows is supported, and why macOS / Linux are not | "Platform matrix" |
-| Exactly how credentials and data are stored, and how far redaction goes | "Security design" |
-| What to do when a session expires, and when automatic re-login applies | "Renewal semantics" |
-| Where data lives and whether it keeps growing | "Data directory and environment variables" |
-| An endpoint will not open, or a tool errors out | `runbook/99-troubleshooting.md` (the troubleshooting quick reference inside the skill) |
-| Setting up an environment yourself, driving from the command line, changing the code (for technical colleagues) | "Installation forms", "Starting the server" in the technical reference |
-| Getting the source, packaging, project structure, running the tests (for maintainers) | **[PACKAGING.en.md](PACKAGING.en.md)** |
-
-> Environment setup, starting the server, and command-line driving are **not things a user does** —
-> once the skill is installed the AI handles them. They are documented for the technical people who
-> want to work on it directly.
-> `PACKAGING.en.md` **ships with no distribution package** (the store edition must be self-contained
-> in its documentation), so the technical reference does not repeat it.
+| What the 21 tools are and what arguments each takes | `runbook/90-reference.md` inside the skill |
+| How the login, capture, analyze, and generate steps are run | the `runbook/` directory inside the skill (00 environment → 05 generate → 06 iterate) |
+| An endpoint will not open, or a tool errors out | `runbook/99-troubleshooting.md` inside the skill |
+| Scope of use, credential handling warning, no warranty, limitation of liability | [DISCLAIMER.md](DISCLAIMER.md), in the same folder |
 
 ---
 
 ## License
 
-This project ships as **two editions with different terms** — **the `LICENSE` inside the package you
-actually received is the one that applies**:
+**The `LICENSE` inside the package you actually received is the one that applies.** In short:
 
-| Edition | Where it comes from | Terms |
-|---|---|---|
-| Open-source | this repository, GitHub Releases skill package | the repository's root `LICENSE` (custom, **non-commercial**): personal learning, testing and non-commercial use; redistribution of modifications must retain source attribution; derivative work must be open source; no direct commercial use |
-| Store | the package distributed through a skill store | the `LICENSE` inside that package (`LICENSE-STORE`, a custom **store-distribution license**): grants store listing and end-user use (including internal business purposes); attribution and disclaimers retained; no resale, no redistribution outside that store, no sublicensing, no distributing modified versions (private modification is fine); it does **not** waive the open-source edition's non-commercial restriction |
+- **You may**: install the skill you obtained from the store and use it, including for the internal
+  business purposes of you or your organisation; keep and run it locally for that use; distribute it
+  through the store you obtained it from, on the terms that store requires of its listings.
+- **You must**: retain the copyright and attribution notices.
+- **You may not**: resell the skill itself, or charge others specifically for it as a standalone
+  product; re-upload or redistribute it outside the store you obtained it from without prior written
+  permission; sublicense it; or distribute a modified version to others.
+- **Modifying it for your own internal use is allowed**; distributing that modified version to others
+  is not, unless you have written permission.
 
-> The two packages **do not contain the same things**: the **store edition** trims the development
-> artifacts for store distribution — no test suite (`tests/`), no test dependencies
-> (`requirements-dev.txt`), no packaging metadata (`pyproject.toml`), and no `.vscode/`, `bootstrap.sh`
-> or `install-agent.ps1` — keeping only what is needed at runtime; its license is the store one
-> (`LICENSE-STORE`, named `LICENSE` inside the package). The **open-source edition** keeps the full
-> development artifacts (including `tests/`), and carries the repository's non-commercial license.
-> **`DISCLAIMER.md` is bundled in both editions** (it only covers scope of use and credential handling,
-> and states no license terms). In short: **to run the tests locally, use the open-source edition** —
-> the store package has neither the test suite nor the test dependencies.
-
-> Both licenses are **self-authored usage-boundary statements and have not been reviewed by a lawyer** —
-> obtain legal review before relying on either as the sole legal basis for a specific deployment.
-> Whichever edition you have, please also read [DISCLAIMER.md](DISCLAIMER.md) (scope of use, credential
-> handling warning, no warranty, limitation of liability) — both editions' packages bundle it, and this
-> repository's root carries the same file.
+> The license is a **self-authored usage-boundary statement and has not been reviewed by a lawyer** —
+> obtain legal review before relying on it as the sole legal basis for a specific deployment.
+> Please also read [DISCLAIMER.md](DISCLAIMER.md) (scope of use, credential handling warning,
+> no warranty, limitation of liability).
 
 ## Disclaimer (scope of use)
 
 > The Chinese text in [README.md](README.md) is the original of this disclaimer and prevails;
 > the English below is a faithful translation provided for convenience.
 
-This project is intended solely for lawful and compliant development, testing, interface analysis,
+This skill is intended solely for lawful and compliant development, testing, interface analysis,
 documentation generation, integration verification, and compliance assessment — to help users study,
 understand, and manage the interface behavior of **systems they are authorized to access**.
 
 Users must comply with the laws and regulations of the People's Republic of China and any locally
 applicable law, and must independently confirm the legality of their use. The following uses are not
-considered legitimate uses of this project:
+considered legitimate uses of this skill:
 
 - Unauthorized system probing, attacks, authentication bypass, disruption of service availability,
   or any action violating a website's or platform's terms of service
@@ -300,6 +271,6 @@ considered legitimate uses of this project:
   the lawful interests of others
 - Any purpose that violates applicable law, contract, industry norms, or security requirements
 
-This project assumes no responsibility for any action taken by its users. Before using this project
+This skill assumes no responsibility for any action taken by its users. Before using this skill
 against external systems, users must first confirm they hold the appropriate authorization and legal
 basis, and they bear the security and compliance responsibility themselves.
